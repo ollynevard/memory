@@ -1,0 +1,6 @@
+name = "memory"
+main = "src/index.ts"
+compatibility_date = "2026-03-21"
+
+[observability]
+enabled = true
