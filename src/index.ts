@@ -1,6 +1,7 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { ProxyToSelf } from "workers-mcp";
 import { createClient } from "./services/turso";
+import { remember as rememberTool } from "./tools/remember";
 
 export interface Env {
   OPENAI_API_KEY: string;
@@ -20,7 +21,25 @@ export default class MemoryServer extends WorkerEntrypoint<Env> {
    * @return {string} Confirmation with stored thought ID and extracted metadata.
    */
   async remember(content: string): Promise<string> {
-    return `TODO: remember "${content}"`;
+    const db = createClient(this.env);
+    const result = await rememberTool(this.env, db, content);
+
+    const parts = [`Remembered (${result.id}): ${result.type}`];
+    if (result.topics.length > 0) {
+      parts.push(`Topics: ${result.topics.join(", ")}`);
+    }
+    if (result.people.length > 0) {
+      parts.push(`People: ${result.people.join(", ")}`);
+    }
+    if (result.action_items.length > 0) {
+      parts.push(`Action items: ${result.action_items.join("; ")}`);
+    }
+    if (result.superseded) {
+      parts.push(
+        `Superseded ${result.superseded.id}: ${result.superseded.reason}`,
+      );
+    }
+    return parts.join("\n");
   }
 
   /**
