@@ -5,3 +5,5 @@ pre-commit:
       run: npx biome check .
     typecheck:
       run: npx tsc --noEmit
+    test:
+      run: npx vitest run
