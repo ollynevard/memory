@@ -1,5 +1,6 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { ProxyToSelf } from "workers-mcp";
+import { createClient } from "./services/turso";
 
 export interface Env {
   OPENAI_API_KEY: string;
@@ -63,6 +64,17 @@ export default class MemoryServer extends WorkerEntrypoint<Env> {
    */
   async stats(): Promise<string> {
     return "TODO: stats";
+  }
+
+  /**
+   * Health check — verifies database connectivity.
+   *
+   * @return {string} Connection status.
+   */
+  async ping(): Promise<string> {
+    const db = createClient(this.env);
+    const result = await db.execute("SELECT COUNT(*) as count FROM thoughts");
+    return `Connected. ${result.rows[0].count} thoughts stored.`;
   }
 
   async fetch(request: Request): Promise<Response> {

@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS thoughts (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
   content TEXT NOT NULL,
+  embedding F32_BLOB(1536),
   type TEXT DEFAULT 'observation',
   topics TEXT DEFAULT '[]',
   people TEXT DEFAULT '[]',
@@ -14,14 +15,11 @@ CREATE TABLE IF NOT EXISTS thoughts (
   updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
-CREATE VIRTUAL TABLE IF NOT EXISTS thought_embeddings USING vec0(
-  thought_id TEXT,
-  embedding float[1536]
-);
+CREATE INDEX IF NOT EXISTS idx_thoughts_embedding
+  ON thoughts (libsql_vector_idx(embedding));
 
 CREATE VIRTUAL TABLE IF NOT EXISTS thought_fts USING fts5(
   content,
-  thought_id UNINDEXED,
   content=thoughts,
   content_rowid=rowid
 );
