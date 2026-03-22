@@ -1,8 +1,11 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { ProxyToSelf } from "workers-mcp";
 import { createClient } from "./services/turso";
+import { browse as browseTool } from "./tools/browse";
+import { forget as forgetTool } from "./tools/forget";
 import { recall as recallTool } from "./tools/recall";
 import { remember as rememberTool } from "./tools/remember";
+import { stats as statsTool } from "./tools/stats";
 
 export interface Env {
   OPENAI_API_KEY: string;
@@ -87,7 +90,23 @@ export default class MemoryServer extends WorkerEntrypoint<Env> {
    * @return {string} Recent thoughts ordered by creation date.
    */
   async browse(limit: number = 20, type?: string): Promise<string> {
-    return `TODO: browse (limit ${limit}, type ${type ?? "all"})`;
+    const db = createClient(this.env);
+    const results = await browseTool(db, { limit, type });
+
+    if (results.length === 0) {
+      return "No thoughts stored yet.";
+    }
+
+    return results
+      .map((r) => {
+        const parts = [`[${r.id}] (${r.type}) ${r.content}`];
+        if (r.topics.length > 0) {
+          parts.push(`  topics: ${r.topics.join(", ")}`);
+        }
+        parts.push(`  created: ${r.created_at}`);
+        return parts.join("\n");
+      })
+      .join("\n\n");
   }
 
   /**
@@ -97,7 +116,13 @@ export default class MemoryServer extends WorkerEntrypoint<Env> {
    * @return {string} Confirmation of deletion.
    */
   async forget(id: string): Promise<string> {
-    return `TODO: forget "${id}"`;
+    const db = createClient(this.env);
+    const deleted = await forgetTool(db, id);
+
+    if (!deleted) {
+      return `No active thought found with ID "${id}".`;
+    }
+    return `Forgotten: ${id}`;
   }
 
   /**
@@ -107,7 +132,19 @@ export default class MemoryServer extends WorkerEntrypoint<Env> {
    * @return {string} Memory store statistics.
    */
   async stats(): Promise<string> {
-    return "TODO: stats";
+    const db = createClient(this.env);
+    const result = await statsTool(db);
+
+    const parts = [`Total active: ${result.total}`];
+    if (Object.keys(result.byType).length > 0) {
+      const breakdown = Object.entries(result.byType)
+        .map(([type, count]) => `${type}: ${count}`)
+        .join(", ");
+      parts.push(`By type: ${breakdown}`);
+    }
+    parts.push(`Superseded: ${result.superseded}`);
+    parts.push(`Most recent: ${result.mostRecent ?? "none"}`);
+    return parts.join("\n");
   }
 
   /**
