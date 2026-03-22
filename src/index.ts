@@ -1,6 +1,7 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { ProxyToSelf } from "workers-mcp";
 import { createClient } from "./services/turso";
+import { recall as recallTool } from "./tools/recall";
 import { remember as rememberTool } from "./tools/remember";
 
 export interface Env {
@@ -51,7 +52,31 @@ export default class MemoryServer extends WorkerEntrypoint<Env> {
    * @return {string} Ranked search results with content, metadata, and similarity scores.
    */
   async recall(query: string, limit: number = 10): Promise<string> {
-    return `TODO: recall "${query}" (limit ${limit})`;
+    const db = createClient(this.env);
+    const results = await recallTool(this.env, db, {
+      query,
+      limit,
+    });
+
+    if (results.length === 0) {
+      return "No matching memories found.";
+    }
+
+    return results
+      .map((r) => {
+        const parts = [`[${r.id}] (${r.type}) ${r.content}`];
+        if (r.similarity !== null) {
+          parts.push(`  similarity: ${(r.similarity * 100).toFixed(1)}%`);
+        }
+        if (r.topics.length > 0) {
+          parts.push(`  topics: ${r.topics.join(", ")}`);
+        }
+        if (r.stale) {
+          parts.push("  ⚠ stale — consider reviewing");
+        }
+        return parts.join("\n");
+      })
+      .join("\n\n");
   }
 
   /**
