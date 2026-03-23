@@ -8,7 +8,7 @@ enabled = true
 
 [[kv_namespaces]]
 binding = "OAUTH_KV"
-id = "PLACEHOLDER"
+id = "e29217827f864792a05f4cd8d9f9fec9"
 
 [durable_objects]
 bindings = [
@@ -18,3 +18,9 @@ bindings = [
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["MemoryMCP"]
+
+# Non-secret Access endpoints — set via wrangler secret for CLIENT_ID and CLIENT_SECRET
+[vars]
+ACCESS_TOKEN_URL = ""
+ACCESS_AUTHORIZATION_URL = ""
+ACCESS_JWKS_URL = ""
