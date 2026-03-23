@@ -21,6 +21,6 @@ new_sqlite_classes = ["MemoryMCP"]
 
 # Non-secret Access endpoints — set via wrangler secret for CLIENT_ID and CLIENT_SECRET
 [vars]
-ACCESS_TOKEN_URL = ""
-ACCESS_AUTHORIZATION_URL = ""
-ACCESS_JWKS_URL = ""
+ACCESS_TOKEN_URL = "https://ollynevard-dev-pages.cloudflareaccess.com/cdn-cgi/access/sso/oidc/7c9d96b60151964a0149a27399dcfadceca3cf9b5a2c9133bdaf8cf71224d9c0/token"
+ACCESS_AUTHORIZATION_URL = "https://ollynevard-dev-pages.cloudflareaccess.com/cdn-cgi/access/sso/oidc/7c9d96b60151964a0149a27399dcfadceca3cf9b5a2c9133bdaf8cf71224d9c0/authorization"
+ACCESS_JWKS_URL = "https://ollynevard-dev-pages.cloudflareaccess.com/cdn-cgi/access/sso/oidc/7c9d96b60151964a0149a27399dcfadceca3cf9b5a2c9133bdaf8cf71224d9c0/jwks"
