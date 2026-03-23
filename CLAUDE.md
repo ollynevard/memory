@@ -12,14 +12,20 @@ A remote MCP server that gives AI agents persistent, semantic memory. Cloudflare
 - **Runtime:** Cloudflare Workers (TypeScript)
 - **Database:** Turso (hosted SQLite with sqlite-vec + FTS5)
 - **Embeddings & metadata:** OpenAI (text-embedding-3-small + gpt-4o-mini)
-- **MCP framework:** workers-mcp
+- **MCP framework:** @modelcontextprotocol/sdk + agents (Durable Object)
+- **Auth:** OAuth 2.1 via @cloudflare/workers-oauth-provider + Cloudflare Access
 
 ## Project Structure
 
 ```
 memory/
 ├── src/
-│   ├── index.ts              ← MCP server entry point
+│   ├── index.ts              ← OAuthProvider + MemoryMCP Durable Object
+│   ├── auth/
+│   │   ├── access-handler.ts ← Cloudflare Access OAuth flow
+│   │   ├── jwt.ts            ← ID token verification
+│   │   ├── state.ts          ← OAuth state management (KV)
+│   │   └── types.ts          ← Auth prop types
 │   ├── tools/
 │   │   ├── remember.ts
 │   │   ├── recall.ts

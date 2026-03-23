@@ -8,7 +8,7 @@ enabled = true
 
 [[kv_namespaces]]
 binding = "OAUTH_KV"
-id = "PLACEHOLDER"
+id = "e29217827f864792a05f4cd8d9f9fec9"
 
 [durable_objects]
 bindings = [
@@ -18,3 +18,9 @@ bindings = [
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["MemoryMCP"]
+
+# Non-secret Access endpoints — set via wrangler secret for CLIENT_ID and CLIENT_SECRET
+[vars]
+ACCESS_TOKEN_URL = "https://ollynevard-dev-pages.cloudflareaccess.com/cdn-cgi/access/sso/oidc/7c9d96b60151964a0149a27399dcfadceca3cf9b5a2c9133bdaf8cf71224d9c0/token"
+ACCESS_AUTHORIZATION_URL = "https://ollynevard-dev-pages.cloudflareaccess.com/cdn-cgi/access/sso/oidc/7c9d96b60151964a0149a27399dcfadceca3cf9b5a2c9133bdaf8cf71224d9c0/authorization"
+ACCESS_JWKS_URL = "https://ollynevard-dev-pages.cloudflareaccess.com/cdn-cgi/access/sso/oidc/7c9d96b60151964a0149a27399dcfadceca3cf9b5a2c9133bdaf8cf71224d9c0/jwks"
