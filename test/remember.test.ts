@@ -23,12 +23,11 @@ const mockExtractMetadata = vi.mocked(extractMetadata);
 const mockCheckSupersede = vi.mocked(checkSupersede);
 const mockUpdateSupersededBy = vi.mocked(updateSupersededBy);
 
-const TEST_ENV: Env = {
+const TEST_ENV = {
   OPENAI_API_KEY: "test-key",
   TURSO_URL: "http://localhost:8080",
   TURSO_AUTH_TOKEN: "test-token",
-  SHARED_SECRET: "a".repeat(64),
-};
+} as unknown as Env;
 
 const FAKE_EMBEDDING = Array.from({ length: 1536 }, () => 0.1);
 

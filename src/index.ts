@@ -1,5 +1,9 @@
-import { WorkerEntrypoint } from "cloudflare:workers";
-import { ProxyToSelf } from "workers-mcp";
+import OAuthProvider from "@cloudflare/workers-oauth-provider";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpAgent } from "agents/mcp";
+import { z } from "zod";
+import { handleAccessRequest } from "./auth/access-handler";
+import type { Props } from "./auth/types";
 import { createClient } from "./services/turso";
 import { browse as browseTool } from "./tools/browse";
 import { forget as forgetTool } from "./tools/forget";
@@ -11,154 +15,178 @@ export interface Env {
   OPENAI_API_KEY: string;
   TURSO_URL: string;
   TURSO_AUTH_TOKEN: string;
-  SHARED_SECRET: string;
+  OAUTH_KV: KVNamespace;
+  ACCESS_CLIENT_ID: string;
+  ACCESS_CLIENT_SECRET: string;
+  ACCESS_TOKEN_URL: string;
+  ACCESS_AUTHORIZATION_URL: string;
+  ACCESS_JWKS_URL: string;
+  MCP_OBJECT: DurableObjectNamespace<MemoryMCP>;
 }
 
-export default class MemoryServer extends WorkerEntrypoint<Env> {
-  private proxy = new ProxyToSelf(this);
+export class MemoryMCP extends McpAgent<Env, Record<string, never>, Props> {
+  server = new McpServer({
+    name: "Memory",
+    version: "0.1.0",
+  });
 
-  /**
-   * Store a thought. The server handles embedding, metadata extraction,
-   * deduplication, and superseding automatically.
-   *
-   * @param content {string} The thought to remember, in natural language.
-   * @return {string} Confirmation with stored thought ID and extracted metadata.
-   */
-  async remember(content: string): Promise<string> {
-    const db = createClient(this.env);
-    const result = await rememberTool(this.env, db, content);
+  async init() {
+    this.server.tool(
+      "remember",
+      "Store a thought. The server handles embedding, metadata extraction, deduplication, and superseding automatically.",
+      {
+        content: z
+          .string()
+          .describe("The thought to remember, in natural language."),
+      },
+      async ({ content }) => {
+        const db = createClient(this.env);
+        const result = await rememberTool(this.env, db, content);
 
-    const parts = [`Remembered (${result.id}): ${result.type}`];
-    if (result.topics.length > 0) {
-      parts.push(`Topics: ${result.topics.join(", ")}`);
-    }
-    if (result.people.length > 0) {
-      parts.push(`People: ${result.people.join(", ")}`);
-    }
-    if (result.action_items.length > 0) {
-      parts.push(`Action items: ${result.action_items.join("; ")}`);
-    }
-    if (result.superseded) {
-      parts.push(
-        `Superseded ${result.superseded.id}: ${result.superseded.reason}`,
-      );
-    }
-    return parts.join("\n");
-  }
+        const parts = [`Remembered (${result.id}): ${result.type}`];
+        if (result.topics.length > 0)
+          parts.push(`Topics: ${result.topics.join(", ")}`);
+        if (result.people.length > 0)
+          parts.push(`People: ${result.people.join(", ")}`);
+        if (result.action_items.length > 0)
+          parts.push(`Action items: ${result.action_items.join("; ")}`);
+        if (result.superseded)
+          parts.push(
+            `Superseded ${result.superseded.id}: ${result.superseded.reason}`,
+          );
 
-  /**
-   * Search memories by meaning and keyword. Runs hybrid semantic + full-text
-   * search and returns ranked results.
-   *
-   * @param query {string} Natural language search query.
-   * @param limit {number} Maximum results to return (default 10, max 50).
-   * @return {string} Ranked search results with content, metadata, and similarity scores.
-   */
-  async recall(query: string, limit: number = 10): Promise<string> {
-    const db = createClient(this.env);
-    const results = await recallTool(this.env, db, {
-      query,
-      limit,
-    });
+        return { content: [{ type: "text", text: parts.join("\n") }] };
+      },
+    );
 
-    if (results.length === 0) {
-      return "No matching memories found.";
-    }
+    this.server.tool(
+      "recall",
+      "Search memories by meaning and keyword. Runs hybrid semantic + full-text search and returns ranked results.",
+      {
+        query: z.string().describe("Natural language search query."),
+        limit: z
+          .number()
+          .min(1)
+          .max(50)
+          .default(10)
+          .describe("Maximum results to return."),
+      },
+      async ({ query, limit }) => {
+        const db = createClient(this.env);
+        const results = await recallTool(this.env, db, { query, limit });
 
-    return results
-      .map((r) => {
-        const parts = [`[${r.id}] (${r.type}) ${r.content}`];
-        if (r.similarity !== null) {
-          parts.push(`  similarity: ${(r.similarity * 100).toFixed(1)}%`);
+        if (results.length === 0) {
+          return {
+            content: [{ type: "text", text: "No matching memories found." }],
+          };
         }
-        if (r.topics.length > 0) {
-          parts.push(`  topics: ${r.topics.join(", ")}`);
+
+        const text = results
+          .map((r) => {
+            const parts = [`[${r.id}] (${r.type}) ${r.content}`];
+            if (r.similarity !== null)
+              parts.push(`  similarity: ${(r.similarity * 100).toFixed(1)}%`);
+            if (r.topics.length > 0)
+              parts.push(`  topics: ${r.topics.join(", ")}`);
+            if (r.stale) parts.push("  ⚠ stale — consider reviewing");
+            return parts.join("\n");
+          })
+          .join("\n\n");
+
+        return { content: [{ type: "text", text }] };
+      },
+    );
+
+    this.server.tool(
+      "browse",
+      "List recent thoughts in chronological order.",
+      {
+        limit: z
+          .number()
+          .min(1)
+          .max(100)
+          .default(20)
+          .describe("Maximum results to return."),
+        type: z
+          .string()
+          .optional()
+          .describe("Optional filter by thought type."),
+      },
+      async ({ limit, type }) => {
+        const db = createClient(this.env);
+        const results = await browseTool(db, { limit, type });
+
+        if (results.length === 0) {
+          return {
+            content: [{ type: "text", text: "No thoughts stored yet." }],
+          };
         }
-        if (r.stale) {
-          parts.push("  ⚠ stale — consider reviewing");
+
+        const text = results
+          .map((r) => {
+            const parts = [`[${r.id}] (${r.type}) ${r.content}`];
+            if (r.topics.length > 0)
+              parts.push(`  topics: ${r.topics.join(", ")}`);
+            parts.push(`  created: ${r.created_at}`);
+            return parts.join("\n");
+          })
+          .join("\n\n");
+
+        return { content: [{ type: "text", text }] };
+      },
+    );
+
+    this.server.tool(
+      "forget",
+      "Soft-delete a thought by ID.",
+      { id: z.string().describe("The thought ID to forget.") },
+      async ({ id }) => {
+        const db = createClient(this.env);
+        const deleted = await forgetTool(db, id);
+
+        const text = deleted
+          ? `Forgotten: ${id}`
+          : `No active thought found with ID "${id}".`;
+
+        return { content: [{ type: "text", text }] };
+      },
+    );
+
+    this.server.tool(
+      "stats",
+      "Overview of the memory store — total count, breakdown by type, superseded count, and most recent capture timestamp.",
+      {},
+      async () => {
+        const db = createClient(this.env);
+        const result = await statsTool(db);
+
+        const parts = [`Total active: ${result.total}`];
+        if (Object.keys(result.byType).length > 0) {
+          const breakdown = Object.entries(result.byType)
+            .map(([t, count]) => `${t}: ${count}`)
+            .join(", ");
+          parts.push(`By type: ${breakdown}`);
         }
-        return parts.join("\n");
-      })
-      .join("\n\n");
-  }
+        parts.push(`Superseded: ${result.superseded}`);
+        parts.push(`Most recent: ${result.mostRecent ?? "none"}`);
 
-  /**
-   * List recent thoughts in chronological order.
-   *
-   * @param limit {number} Maximum results to return (default 20, max 100).
-   * @param type {string} Optional filter by thought type.
-   * @return {string} Recent thoughts ordered by creation date.
-   */
-  async browse(limit: number = 20, type?: string): Promise<string> {
-    const db = createClient(this.env);
-    const results = await browseTool(db, { limit, type });
-
-    if (results.length === 0) {
-      return "No thoughts stored yet.";
-    }
-
-    return results
-      .map((r) => {
-        const parts = [`[${r.id}] (${r.type}) ${r.content}`];
-        if (r.topics.length > 0) {
-          parts.push(`  topics: ${r.topics.join(", ")}`);
-        }
-        parts.push(`  created: ${r.created_at}`);
-        return parts.join("\n");
-      })
-      .join("\n\n");
-  }
-
-  /**
-   * Soft-delete a thought by ID.
-   *
-   * @param id {string} The thought ID to forget.
-   * @return {string} Confirmation of deletion.
-   */
-  async forget(id: string): Promise<string> {
-    const db = createClient(this.env);
-    const deleted = await forgetTool(db, id);
-
-    if (!deleted) {
-      return `No active thought found with ID "${id}".`;
-    }
-    return `Forgotten: ${id}`;
-  }
-
-  /**
-   * Overview of the memory store — total count, breakdown by type,
-   * superseded count, and most recent capture timestamp.
-   *
-   * @return {string} Memory store statistics.
-   */
-  async stats(): Promise<string> {
-    const db = createClient(this.env);
-    const result = await statsTool(db);
-
-    const parts = [`Total active: ${result.total}`];
-    if (Object.keys(result.byType).length > 0) {
-      const breakdown = Object.entries(result.byType)
-        .map(([type, count]) => `${type}: ${count}`)
-        .join(", ");
-      parts.push(`By type: ${breakdown}`);
-    }
-    parts.push(`Superseded: ${result.superseded}`);
-    parts.push(`Most recent: ${result.mostRecent ?? "none"}`);
-    return parts.join("\n");
-  }
-
-  /**
-   * Health check — verifies database connectivity.
-   *
-   * @return {string} Connection status.
-   */
-  async ping(): Promise<string> {
-    const db = createClient(this.env);
-    const result = await db.execute("SELECT COUNT(*) as count FROM thoughts");
-    return `Connected. ${result.rows[0].count} thoughts stored.`;
-  }
-
-  async fetch(request: Request): Promise<Response> {
-    return this.proxy.fetch(request);
+        return { content: [{ type: "text", text: parts.join("\n") }] };
+      },
+    );
   }
 }
+
+export default new OAuthProvider({
+  apiRoute: "/mcp",
+  apiHandler: MemoryMCP.serve("/mcp"),
+  defaultHandler: {
+    fetch: handleAccessRequest as (
+      request: Request,
+      env: Env,
+      ctx: ExecutionContext,
+    ) => Promise<Response>,
+  },
+  authorizeEndpoint: "/authorize",
+  tokenEndpoint: "/token",
+  clientRegistrationEndpoint: "/register",
+});

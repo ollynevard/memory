@@ -13,9 +13,12 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@cloudflare/workers-oauth-provider": "^0.3.0",
     "@libsql/client": "^0.17.2",
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "agents": "^0.7.9",
     "openai": "^6.32.0",
-    "workers-mcp": "^0.0.13"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.8",
