@@ -45,13 +45,24 @@ memory/
 └── tsconfig.json
 ```
 
+## Branches
+
+Conventional commit style. Ticket number is optional:
+
+```
+feat/mcp/T19-add-recall
+refactor/services/extract-db-module
+ci/biome/T23-add-linting
+```
+
 ## Commits and PR Titles
 
-Conventional commits with ticket number in square brackets at the end:
+Conventional commits. Ticket number in square brackets at the end is optional:
 
 ```
 feat(mcp): add recall [T19]
 ci(biome): add linting and formatting [T23]
+refactor(services): extract db module
 ```
 
 Types: feat, fix, refactor, test, chore, docs, perf, ci, build, style, revert

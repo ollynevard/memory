@@ -1,12 +1,13 @@
 import type { Client } from "@libsql/client/web";
 import type { Env } from "../index";
+import { embeddingToJson, parseThoughtRow, statusFilter } from "../services/db";
 import { embed } from "../services/openai";
 
 export interface RecallOptions {
   query: string;
   limit?: number;
   threshold?: number;
-  includeSupereded?: boolean;
+  includeSuperseded?: boolean;
   filter?: { type?: string; topics?: string[] };
 }
 
@@ -40,13 +41,11 @@ export async function recall(
 ): Promise<RecallResult[]> {
   const limit = Math.min(Math.max(options.limit ?? 10, 1), 50);
   const threshold = options.threshold ?? 0.7;
-  const statusFilter = options.includeSupereded
-    ? "status != 'deleted'"
-    : "status = 'active'";
+  const status = statusFilter(options.includeSuperseded);
 
   // 1. Embed query
   const queryEmbedding = await embed(env, options.query);
-  const embeddingJson = `[${queryEmbedding.join(",")}]`;
+  const embeddingJson = embeddingToJson(queryEmbedding);
 
   // 2. Run semantic and FTS search in parallel
   const [vectorResults, ftsResults] = await Promise.all([
@@ -54,7 +53,7 @@ export async function recall(
       sql: `SELECT id, content, type, topics, people, created_at,
               vector_distance_cos(embedding, vector(:embedding)) as distance
             FROM thoughts
-            WHERE ${statusFilter}
+            WHERE ${status}
             ORDER BY vector_distance_cos(embedding, vector(:embedding))
             LIMIT :limit`,
       args: { embedding: embeddingJson, limit },
@@ -64,7 +63,7 @@ export async function recall(
               rank as fts_rank
             FROM thought_fts f
             JOIN thoughts t ON f.rowid = t.rowid
-            WHERE thought_fts MATCH :query AND t.${statusFilter}
+            WHERE thought_fts MATCH :query AND t.${status}
             ORDER BY rank
             LIMIT :limit`,
       args: { query: options.query, limit },
@@ -79,19 +78,11 @@ export async function recall(
     const similarity = 1 - distance;
     if (similarity < threshold) continue;
 
-    const id = row.id as string;
-    const type = row.type as string;
-    const createdAt = row.created_at as string;
-
-    seen.set(id, {
-      id,
-      content: row.content as string,
-      type,
-      topics: JSON.parse((row.topics as string) ?? "[]"),
-      people: JSON.parse((row.people as string) ?? "[]"),
+    const thought = parseThoughtRow(row);
+    seen.set(thought.id, {
+      ...thought,
       similarity,
-      created_at: createdAt,
-      stale: isStale(type, createdAt),
+      stale: isStale(thought.type, thought.created_at),
     });
   }
 
@@ -99,18 +90,11 @@ export async function recall(
     const id = row.id as string;
     if (seen.has(id)) continue;
 
-    const type = row.type as string;
-    const createdAt = row.created_at as string;
-
-    seen.set(id, {
-      id,
-      content: row.content as string,
-      type,
-      topics: JSON.parse((row.topics as string) ?? "[]"),
-      people: JSON.parse((row.people as string) ?? "[]"),
+    const thought = parseThoughtRow(row);
+    seen.set(thought.id, {
+      ...thought,
       similarity: null,
-      created_at: createdAt,
-      stale: isStale(type, createdAt),
+      stale: isStale(thought.type, thought.created_at),
     });
   }
 
