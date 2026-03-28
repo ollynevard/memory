@@ -1,6 +1,7 @@
 import type { Client, InStatement } from "@libsql/client/web";
 import type { Env } from "../index";
 import { embeddingToJson, generateId } from "../services/db";
+import { timed } from "../services/logger";
 import { embed, extractMetadata } from "../services/openai";
 import { checkSupersede } from "../services/supersede";
 
@@ -20,12 +21,14 @@ export async function remember(
 ): Promise<RememberResult> {
   // 1. Fan out parallel OpenAI calls: embedding + metadata extraction
   const [embedding, metadata] = await Promise.all([
-    embed(env, content),
-    extractMetadata(env, content),
+    timed("embed", () => embed(env, content)),
+    timed("extract_metadata", () => extractMetadata(env, content)),
   ]);
 
   // 2. Dedup + supersede check (read-only)
-  const supersedeResult = await checkSupersede(env, db, content, embedding);
+  const supersedeResult = await timed("check_supersede", () =>
+    checkSupersede(env, db, content, embedding),
+  );
 
   if (supersedeResult.isDuplicate) {
     throw new Error(
@@ -76,7 +79,9 @@ export async function remember(
   }
 
   // 4. Execute all writes atomically
-  await db.batch(statements, "write");
+  await timed("db_write", () => db.batch(statements, "write"), {
+    statements: statements.length,
+  });
 
   return {
     id,

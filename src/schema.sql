@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS thoughts (
   action_items TEXT DEFAULT '[]',
   source TEXT DEFAULT 'claude',
   status TEXT DEFAULT 'active',     -- active | superseded | deleted
-  superseded_by TEXT,
+  superseded_by TEXT REFERENCES thoughts(id),
   deleted_at TEXT,
   created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
   updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
@@ -27,3 +27,4 @@ CREATE VIRTUAL TABLE IF NOT EXISTS thought_fts USING fts5(
 CREATE INDEX IF NOT EXISTS idx_thoughts_type ON thoughts(type);
 CREATE INDEX IF NOT EXISTS idx_thoughts_status ON thoughts(status);
 CREATE INDEX IF NOT EXISTS idx_thoughts_created ON thoughts(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_thoughts_superseded_by ON thoughts(superseded_by);

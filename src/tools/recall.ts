@@ -1,6 +1,7 @@
 import type { Client } from "@libsql/client/web";
 import type { Env } from "../index";
 import { embeddingToJson, parseThoughtRow, statusFilter } from "../services/db";
+import { timed } from "../services/logger";
 import { embed } from "../services/openai";
 
 export interface RecallOptions {
@@ -44,31 +45,33 @@ export async function recall(
   const status = statusFilter(options.includeSuperseded);
 
   // 1. Embed query
-  const queryEmbedding = await embed(env, options.query);
+  const queryEmbedding = await timed("embed", () => embed(env, options.query));
   const embeddingJson = embeddingToJson(queryEmbedding);
 
   // 2. Run semantic and FTS search in parallel
-  const [vectorResults, ftsResults] = await Promise.all([
-    db.execute({
-      sql: `SELECT id, content, type, topics, people, created_at,
-              vector_distance_cos(embedding, vector(:embedding)) as distance
-            FROM thoughts
-            WHERE ${status}
-            ORDER BY vector_distance_cos(embedding, vector(:embedding))
-            LIMIT :limit`,
-      args: { embedding: embeddingJson, limit },
-    }),
-    db.execute({
-      sql: `SELECT t.id, t.content, t.type, t.topics, t.people, t.created_at,
-              rank as fts_rank
-            FROM thought_fts f
-            JOIN thoughts t ON f.rowid = t.rowid
-            WHERE thought_fts MATCH :query AND t.${status}
-            ORDER BY rank
-            LIMIT :limit`,
-      args: { query: options.query, limit },
-    }),
-  ]);
+  const [vectorResults, ftsResults] = await timed("db_search", () =>
+    Promise.all([
+      db.execute({
+        sql: `SELECT id, content, type, topics, people, created_at,
+                vector_distance_cos(embedding, vector(:embedding)) as distance
+              FROM thoughts
+              WHERE ${status}
+              ORDER BY vector_distance_cos(embedding, vector(:embedding))
+              LIMIT :limit`,
+        args: { embedding: embeddingJson, limit },
+      }),
+      db.execute({
+        sql: `SELECT t.id, t.content, t.type, t.topics, t.people, t.created_at,
+                rank as fts_rank
+              FROM thought_fts f
+              JOIN thoughts t ON f.rowid = t.rowid
+              WHERE thought_fts MATCH :query AND t.${status}
+              ORDER BY rank
+              LIMIT :limit`,
+        args: { query: options.query, limit },
+      }),
+    ]),
+  );
 
   // 3. Merge and deduplicate by thought ID
   const seen = new Map<string, RecallResult>();
