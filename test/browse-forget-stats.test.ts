@@ -14,7 +14,7 @@ function mockDb(
       rowsAffected: result.rowsAffected ?? 0,
     });
   }
-  return { execute } as unknown as Client;
+  return { execute, batch: vi.fn() } as unknown as Client;
 }
 
 describe("browse", () => {
@@ -78,8 +78,18 @@ describe("browse", () => {
 });
 
 describe("forget", () => {
+  function mockForgetDb(rowsAffected: number): Client {
+    return {
+      execute: vi.fn(),
+      batch: vi.fn().mockResolvedValue([
+        { rows: [], rowsAffected },
+        { rows: [], rowsAffected: 0 },
+      ]),
+    } as unknown as Client;
+  }
+
   it("returns true when thought is deleted", async () => {
-    const db = mockDb({ rows: [], rowsAffected: 1 });
+    const db = mockForgetDb(1);
 
     const result = await forget(db, "abc123");
 
@@ -87,23 +97,37 @@ describe("forget", () => {
   });
 
   it("returns false when thought not found", async () => {
-    const db = mockDb({ rows: [], rowsAffected: 0 });
+    const db = mockForgetDb(0);
 
     const result = await forget(db, "nonexistent");
 
     expect(result).toBe(false);
   });
 
-  it("sets status to deleted with timestamp", async () => {
-    const db = mockDb({ rows: [], rowsAffected: 1 });
+  it("batches status update and FTS cleanup", async () => {
+    const db = mockForgetDb(1);
 
     await forget(db, "abc123");
 
-    const call = vi.mocked(db.execute).mock.calls[0];
-    const sql = (call[0] as unknown as { sql: string }).sql;
-    expect(sql).toContain("status = 'deleted'");
-    expect(sql).toContain("deleted_at");
-    expect(sql).toContain("status != 'deleted'");
+    const batch = vi.mocked(db.batch);
+    expect(batch).toHaveBeenCalledOnce();
+    const [statements, mode] = batch.mock.calls[0];
+    expect(mode).toBe("write");
+
+    const stmts = statements as {
+      sql: string;
+      args: Record<string, unknown>;
+    }[];
+    expect(stmts).toHaveLength(2);
+
+    // First: UPDATE status
+    expect(stmts[0].sql).toContain("status = 'deleted'");
+    expect(stmts[0].sql).toContain("deleted_at");
+    expect(stmts[0].sql).toContain("status != 'deleted'");
+
+    // Second: DELETE FTS
+    expect(stmts[1].sql).toContain("DELETE FROM thought_fts");
+    expect(stmts[1].args.id).toBe("abc123");
   });
 });
 

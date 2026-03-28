@@ -1,4 +1,4 @@
-import type { Client } from "@libsql/client/web";
+import type { Client, InStatement } from "@libsql/client/web";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../src/index";
 
@@ -11,17 +11,26 @@ vi.mock("../src/services/openai", () => ({
 // Mock supersede service
 vi.mock("../src/services/supersede", () => ({
   checkSupersede: vi.fn(),
-  updateSupersededBy: vi.fn(),
 }));
 
+// Mock generateId
+vi.mock("../src/services/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/services/db")>();
+  return {
+    ...actual,
+    generateId: vi.fn().mockReturnValue("generated-id-abc"),
+  };
+});
+
+import { generateId } from "../src/services/db";
 import { embed, extractMetadata } from "../src/services/openai";
-import { checkSupersede, updateSupersededBy } from "../src/services/supersede";
+import { checkSupersede } from "../src/services/supersede";
 import { remember } from "../src/tools/remember";
 
 const mockEmbed = vi.mocked(embed);
 const mockExtractMetadata = vi.mocked(extractMetadata);
 const mockCheckSupersede = vi.mocked(checkSupersede);
-const mockUpdateSupersededBy = vi.mocked(updateSupersededBy);
+const mockGenerateId = vi.mocked(generateId);
 
 const TEST_ENV = {
   OPENAI_API_KEY: "test-key",
@@ -34,13 +43,16 @@ const FAKE_EMBEDDING = Array.from({ length: 1536 }, () => 0.1);
 function mockDb(overrides: Partial<Client> = {}): Client {
   return {
     execute: vi.fn().mockResolvedValue({
-      rows: [{ id: "abc123" }],
-      columns: ["id"],
-      columnTypes: ["TEXT"],
+      rows: [],
+      columns: [],
+      columnTypes: [],
       rowsAffected: 1,
       lastInsertRowid: undefined,
     }),
-    batch: vi.fn(),
+    batch: vi.fn().mockResolvedValue([
+      { rows: [], rowsAffected: 1 },
+      { rows: [], rowsAffected: 1 },
+    ]),
     transaction: vi.fn(),
     executeMultiple: vi.fn(),
     sync: vi.fn(),
@@ -63,7 +75,7 @@ describe("remember", () => {
       action_items: [],
     });
     mockCheckSupersede.mockResolvedValue({ isDuplicate: false });
-    mockUpdateSupersededBy.mockResolvedValue(undefined);
+    mockGenerateId.mockReturnValue("generated-id-abc");
   });
 
   it("stores a thought and returns metadata", async () => {
@@ -72,7 +84,7 @@ describe("remember", () => {
     const result = await remember(TEST_ENV, db, "Vitest is great for testing");
 
     expect(result).toEqual({
-      id: "abc123",
+      id: "generated-id-abc",
       type: "observation",
       topics: ["testing"],
       people: [],
@@ -112,44 +124,47 @@ describe("remember", () => {
     );
   });
 
-  it("inserts thought with embedding and metadata", async () => {
+  it("batches insert thought and FTS in a single write", async () => {
     const db = mockDb();
-    const execute = vi.mocked(db.execute);
+    const batch = vi.mocked(db.batch);
 
     await remember(TEST_ENV, db, "some thought");
 
-    // First call: INSERT INTO thoughts
-    const insertCall = execute.mock.calls.find(
-      (call) =>
-        typeof call[0] === "object" &&
-        (call[0] as { sql: string }).sql.includes("INSERT INTO thoughts"),
-    );
-    expect(insertCall).toBeDefined();
+    expect(batch).toHaveBeenCalledOnce();
+    const [statements, mode] = batch.mock.calls[0];
+    expect(mode).toBe("write");
 
-    const insertArgs = (
-      insertCall?.[0] as unknown as { args: Record<string, unknown> }
-    ).args;
-    expect(insertArgs.content).toBe("some thought");
-    expect(insertArgs.type).toBe("observation");
-    expect(insertArgs.topics).toBe('["testing"]');
+    const stmts = statements as InStatement[];
+    expect(stmts).toHaveLength(2);
+
+    // First statement: INSERT INTO thoughts
+    const insertStmt = stmts[0] as {
+      sql: string;
+      args: Record<string, unknown>;
+    };
+    expect(insertStmt.sql).toContain("INSERT INTO thoughts");
+    expect(insertStmt.args.id).toBe("generated-id-abc");
+    expect(insertStmt.args.content).toBe("some thought");
+    expect(insertStmt.args.type).toBe("observation");
+    expect(insertStmt.args.topics).toBe('["testing"]');
+
+    // Second statement: INSERT INTO thought_fts
+    const ftsStmt = stmts[1] as { sql: string; args: Record<string, unknown> };
+    expect(ftsStmt.sql).toContain("INSERT INTO thought_fts");
+    expect(ftsStmt.args.id).toBe("generated-id-abc");
   });
 
-  it("syncs FTS index after insert", async () => {
-    const db = mockDb();
-    const execute = vi.mocked(db.execute);
+  it("handles superseded thoughts with atomic batch", async () => {
+    const db = mockDb({
+      batch: vi.fn().mockResolvedValue([
+        { rows: [], rowsAffected: 1 },
+        { rows: [], rowsAffected: 1 },
+        { rows: [], rowsAffected: 1 },
+        { rows: [], rowsAffected: 1 },
+      ]),
+    });
+    const batch = vi.mocked(db.batch);
 
-    await remember(TEST_ENV, db, "some thought");
-
-    const ftsCall = execute.mock.calls.find(
-      (call) =>
-        typeof call[0] === "object" &&
-        (call[0] as { sql: string }).sql.includes("INSERT INTO thought_fts"),
-    );
-    expect(ftsCall).toBeDefined();
-  });
-
-  it("handles superseded thoughts", async () => {
-    const db = mockDb();
     mockCheckSupersede.mockResolvedValue({
       isDuplicate: false,
       supersedes: {
@@ -165,14 +180,36 @@ describe("remember", () => {
       id: "old123",
       reason: "Updated with new info",
     });
-    expect(mockUpdateSupersededBy).toHaveBeenCalledWith(db, "old123", "abc123");
+
+    const [statements] = batch.mock.calls[0];
+    const stmts = statements as InStatement[];
+    expect(stmts).toHaveLength(4);
+
+    // Third statement: UPDATE old thought status
+    const updateStmt = stmts[2] as {
+      sql: string;
+      args: Record<string, unknown>;
+    };
+    expect(updateStmt.sql).toContain("status = 'superseded'");
+    expect(updateStmt.args.newId).toBe("generated-id-abc");
+    expect(updateStmt.args.oldId).toBe("old123");
+
+    // Fourth statement: DELETE old FTS entry
+    const deleteFtsStmt = stmts[3] as {
+      sql: string;
+      args: Record<string, unknown>;
+    };
+    expect(deleteFtsStmt.sql).toContain("DELETE FROM thought_fts");
+    expect(deleteFtsStmt.args.id).toBe("old123");
   });
 
-  it("does not call updateSupersededBy when nothing superseded", async () => {
+  it("does not include supersede statements when nothing superseded", async () => {
     const db = mockDb();
+    const batch = vi.mocked(db.batch);
 
     await remember(TEST_ENV, db, "fresh thought");
 
-    expect(mockUpdateSupersededBy).not.toHaveBeenCalled();
+    const [statements] = batch.mock.calls[0];
+    expect(statements).toHaveLength(2);
   });
 });

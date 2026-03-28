@@ -1,8 +1,8 @@
-import type { Client } from "@libsql/client/web";
+import type { Client, InStatement } from "@libsql/client/web";
 import type { Env } from "../index";
-import { embeddingToJson } from "../services/db";
+import { embeddingToJson, generateId } from "../services/db";
 import { embed, extractMetadata } from "../services/openai";
-import { checkSupersede, updateSupersededBy } from "../services/supersede";
+import { checkSupersede } from "../services/supersede";
 
 export interface RememberResult {
   id: string;
@@ -24,7 +24,7 @@ export async function remember(
     extractMetadata(env, content),
   ]);
 
-  // 2. Dedup + supersede check
+  // 2. Dedup + supersede check (read-only)
   const supersedeResult = await checkSupersede(env, db, content, embedding);
 
   if (supersedeResult.isDuplicate) {
@@ -33,35 +33,50 @@ export async function remember(
     );
   }
 
-  // 3. Insert thought
+  // 3. Build atomic batch of all writes
+  const id = generateId();
   const embeddingJson = embeddingToJson(embedding);
-  const result = await db.execute({
-    sql: `INSERT INTO thoughts (content, embedding, type, topics, people, action_items)
-          VALUES (:content, vector(:embedding), :type, :topics, :people, :action_items)
-          RETURNING id`,
-    args: {
-      content,
-      embedding: embeddingJson,
-      type: metadata.type,
-      topics: JSON.stringify(metadata.topics),
-      people: JSON.stringify(metadata.people),
-      action_items: JSON.stringify(metadata.action_items),
+
+  const statements: InStatement[] = [
+    // Insert the new thought
+    {
+      sql: `INSERT INTO thoughts (id, content, embedding, type, topics, people, action_items)
+            VALUES (:id, :content, vector(:embedding), :type, :topics, :people, :action_items)`,
+      args: {
+        id,
+        content,
+        embedding: embeddingJson,
+        type: metadata.type,
+        topics: JSON.stringify(metadata.topics),
+        people: JSON.stringify(metadata.people),
+        action_items: JSON.stringify(metadata.action_items),
+      },
     },
-  });
+    // Sync FTS index
+    {
+      sql: `INSERT INTO thought_fts (rowid, content)
+            SELECT rowid, content FROM thoughts WHERE id = :id`,
+      args: { id },
+    },
+  ];
 
-  const id = result.rows[0].id as string;
-
-  // 4. Sync FTS index
-  await db.execute({
-    sql: `INSERT INTO thought_fts (rowid, content)
-          SELECT rowid, content FROM thoughts WHERE id = :id`,
-    args: { id },
-  });
-
-  // 5. Update superseded_by pointer if we superseded something
+  // If superseding, update old thought and clean up its FTS entry
   if (supersedeResult.supersedes) {
-    await updateSupersededBy(db, supersedeResult.supersedes.id, id);
+    const oldId = supersedeResult.supersedes.id;
+    statements.push(
+      {
+        sql: `UPDATE thoughts SET status = 'superseded', superseded_by = :newId, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = :oldId`,
+        args: { newId: id, oldId },
+      },
+      {
+        sql: `DELETE FROM thought_fts WHERE rowid = (SELECT rowid FROM thoughts WHERE id = :id)`,
+        args: { id: oldId },
+      },
+    );
   }
+
+  // 4. Execute all writes atomically
+  await db.batch(statements, "write");
 
   return {
     id,
