@@ -18,20 +18,44 @@ function parseJWT(token: string): JWTComponents {
   };
 }
 
+const JWKS_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+interface JwksCache {
+  keys: Map<string, CryptoKey>;
+  fetchedAt: number;
+}
+
+const jwksCache = new Map<string, JwksCache>();
+
 async function fetchPublicKey(jwksUrl: string, kid: string) {
+  const cached = jwksCache.get(jwksUrl);
+  if (cached && Date.now() - cached.fetchedAt < JWKS_TTL_MS) {
+    const key = cached.keys.get(kid);
+    if (key) return key;
+  }
+
   const resp = await fetch(jwksUrl);
   const keys = (await resp.json()) as {
     keys: (JsonWebKey & { kid: string })[];
   };
-  const jwk = keys.keys.find((key) => key.kid === kid);
-  if (!jwk) throw new Error(`No key found with kid: ${kid}`);
-  return crypto.subtle.importKey(
-    "jwk",
-    jwk,
-    { hash: "SHA-256", name: "RSASSA-PKCS1-v1_5" },
-    false,
-    ["verify"],
-  );
+
+  const imported = new Map<string, CryptoKey>();
+  for (const jwk of keys.keys) {
+    const key = await crypto.subtle.importKey(
+      "jwk",
+      jwk,
+      { hash: "SHA-256", name: "RSASSA-PKCS1-v1_5" },
+      false,
+      ["verify"],
+    );
+    imported.set(jwk.kid, key);
+  }
+
+  jwksCache.set(jwksUrl, { keys: imported, fetchedAt: Date.now() });
+
+  const key = imported.get(kid);
+  if (!key) throw new Error(`No key found with kid: ${kid}`);
+  return key;
 }
 
 export async function verifyAccessToken(
