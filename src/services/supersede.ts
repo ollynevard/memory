@@ -74,18 +74,10 @@ export async function checkSupersede(
       };
 
       if (parsed.supersedes) {
-        const oldId = row.id as string;
-
-        // Mark old thought as superseded
-        await db.execute({
-          sql: `UPDATE thoughts SET status = 'superseded', superseded_by = :newId, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = :id`,
-          args: { id: oldId, newId: "pending" },
-        });
-
         return {
           isDuplicate: false,
           supersedes: {
-            id: oldId,
+            id: row.id as string,
             content: row.content as string,
             reason: parsed.reason,
           },
@@ -95,15 +87,4 @@ export async function checkSupersede(
   }
 
   return { isDuplicate: false };
-}
-
-export async function updateSupersededBy(
-  db: Client,
-  oldId: string,
-  newId: string,
-): Promise<void> {
-  await db.execute({
-    sql: `UPDATE thoughts SET superseded_by = :newId WHERE id = :oldId`,
-    args: { oldId, newId },
-  });
 }
