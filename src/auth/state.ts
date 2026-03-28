@@ -18,5 +18,9 @@ export async function validateOAuthState(
   const stored = await kv.get(`oauth_state:${stateToken}`);
   if (!stored) throw new Error("Invalid or expired OAuth state");
   await kv.delete(`oauth_state:${stateToken}`);
-  return JSON.parse(stored) as AuthRequest;
+  try {
+    return JSON.parse(stored) as AuthRequest;
+  } catch {
+    throw new Error("Invalid or expired OAuth state");
+  }
 }

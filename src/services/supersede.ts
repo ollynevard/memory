@@ -1,6 +1,7 @@
 import type { Client } from "@libsql/client/web";
 import type { Env } from "../index";
 import { embeddingToJson } from "./db";
+import { fetchWithRetry } from "./openai";
 
 export interface SupersedeResult {
   isDuplicate: boolean;
@@ -46,32 +47,54 @@ export async function checkSupersede(
         row.content as string,
       ).replace("{new_content}", newContent);
 
-      const response = await fetch(
-        "https://api.openai.com/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-            "Content-Type": "application/json",
+      let response: Response;
+      try {
+        response = await fetchWithRetry(
+          "https://api.openai.com/v1/chat/completions",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "gpt-4o-mini",
+              messages: [{ role: "user", content: prompt }],
+              response_format: { type: "json_object" },
+              temperature: 0,
+            }),
           },
-          body: JSON.stringify({
-            model: "gpt-4o-mini",
-            messages: [{ role: "user", content: prompt }],
-            response_format: { type: "json_object" },
-            temperature: 0,
-          }),
-        },
-      );
+        );
+      } catch (err) {
+        console.error("Supersede LLM call failed:", err);
+        continue;
+      }
 
-      if (!response.ok) continue;
+      if (!response.ok) {
+        console.error(
+          `Supersede LLM returned ${response.status} for thought ${row.id}`,
+        );
+        continue;
+      }
 
       const result = (await response.json()) as {
         choices: [{ message: { content: string } }];
       };
-      const parsed = JSON.parse(result.choices[0].message.content) as {
-        supersedes: boolean;
-        reason: string;
-      };
+
+      let parsed: { supersedes: boolean; reason: string };
+      try {
+        parsed = JSON.parse(result.choices[0].message.content) as {
+          supersedes: boolean;
+          reason: string;
+        };
+      } catch (err) {
+        console.error(
+          "Failed to parse supersede response:",
+          result.choices[0].message.content,
+          err,
+        );
+        continue;
+      }
 
       if (parsed.supersedes) {
         return {

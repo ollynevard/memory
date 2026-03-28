@@ -54,13 +54,23 @@ export function embeddingToJson(embedding: number[]): string {
   return `[${embedding.join(",")}]`;
 }
 
+function safeParseArray(value: unknown): string[] {
+  if (typeof value !== "string") return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 export function parseThoughtRow(row: Row): ThoughtRow {
   return {
     id: row.id as string,
     content: row.content as string,
     type: row.type as string,
-    topics: JSON.parse((row.topics as string) ?? "[]"),
-    people: JSON.parse((row.people as string) ?? "[]"),
+    topics: safeParseArray(row.topics),
+    people: safeParseArray(row.people),
     created_at: row.created_at as string,
   };
 }
