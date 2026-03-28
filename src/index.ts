@@ -4,7 +4,7 @@ import { McpAgent } from "agents/mcp";
 import { z } from "zod";
 import { handleAccessRequest } from "./auth/access-handler";
 import type { Props } from "./auth/types";
-import { createClient } from "./services/turso";
+import { createClient } from "./services/db";
 import { browse as browseTool } from "./tools/browse";
 import { forget as forgetTool } from "./tools/forget";
 import { recall as recallTool } from "./tools/recall";

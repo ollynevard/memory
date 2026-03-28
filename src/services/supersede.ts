@@ -1,5 +1,6 @@
 import type { Client } from "@libsql/client/web";
 import type { Env } from "../index";
+import { embeddingToJson } from "./db";
 
 export interface SupersedeResult {
   isDuplicate: boolean;
@@ -19,7 +20,7 @@ export async function checkSupersede(
   newEmbedding: number[],
 ): Promise<SupersedeResult> {
   // Search existing active thoughts by vector similarity
-  const embeddingJson = `[${newEmbedding.join(",")}]`;
+  const embeddingJson = embeddingToJson(newEmbedding);
   const similar = await db.execute({
     sql: `SELECT id, content, vector_distance_cos(embedding, vector(:embedding)) as distance
           FROM thoughts

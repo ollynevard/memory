@@ -1,5 +1,6 @@
 import type { Client } from "@libsql/client/web";
 import type { Env } from "../index";
+import { embeddingToJson } from "../services/db";
 import { embed, extractMetadata } from "../services/openai";
 import { checkSupersede, updateSupersededBy } from "../services/supersede";
 
@@ -33,7 +34,7 @@ export async function remember(
   }
 
   // 3. Insert thought
-  const embeddingJson = `[${embedding.join(",")}]`;
+  const embeddingJson = embeddingToJson(embedding);
   const result = await db.execute({
     sql: `INSERT INTO thoughts (content, embedding, type, topics, people, action_items)
           VALUES (:content, vector(:embedding), :type, :topics, :people, :action_items)
