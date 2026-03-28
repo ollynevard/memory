@@ -31,6 +31,17 @@ export class MemoryMCP extends McpAgent<Env, Record<string, never>, Props> {
   });
 
   async init() {
+    const required = [
+      "OPENAI_API_KEY",
+      "TURSO_URL",
+      "TURSO_AUTH_TOKEN",
+    ] as const;
+    for (const key of required) {
+      if (!this.env[key]) {
+        throw new Error(`Missing required environment variable: ${key}`);
+      }
+    }
+
     this.server.tool(
       "remember",
       "Store a thought. The server handles embedding, metadata extraction, deduplication, and superseding automatically.",
@@ -40,22 +51,51 @@ export class MemoryMCP extends McpAgent<Env, Record<string, never>, Props> {
           .describe("The thought to remember, in natural language."),
       },
       async ({ content }) => {
-        const db = createClient(this.env);
-        const result = await rememberTool(this.env, db, content);
+        if (content.length > 50_000) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Content too long. Maximum 50,000 characters.",
+              },
+            ],
+            isError: true,
+          };
+        }
 
-        const parts = [`Remembered (${result.id}): ${result.type}`];
-        if (result.topics.length > 0)
-          parts.push(`Topics: ${result.topics.join(", ")}`);
-        if (result.people.length > 0)
-          parts.push(`People: ${result.people.join(", ")}`);
-        if (result.action_items.length > 0)
-          parts.push(`Action items: ${result.action_items.join("; ")}`);
-        if (result.superseded)
-          parts.push(
-            `Superseded ${result.superseded.id}: ${result.superseded.reason}`,
-          );
+        try {
+          const db = createClient(this.env);
+          const result = await rememberTool(this.env, db, content);
 
-        return { content: [{ type: "text", text: parts.join("\n") }] };
+          const parts = [`Remembered (${result.id}): ${result.type}`];
+          if (result.topics.length > 0)
+            parts.push(`Topics: ${result.topics.join(", ")}`);
+          if (result.people.length > 0)
+            parts.push(`People: ${result.people.join(", ")}`);
+          if (result.action_items.length > 0)
+            parts.push(`Action items: ${result.action_items.join("; ")}`);
+          if (result.superseded)
+            parts.push(
+              `Superseded ${result.superseded.id}: ${result.superseded.reason}`,
+            );
+
+          return { content: [{ type: "text", text: parts.join("\n") }] };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes("too similar")) {
+            return { content: [{ type: "text", text: msg }], isError: true };
+          }
+          console.error("remember failed:", err);
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Failed to store thought. Please try again.",
+              },
+            ],
+            isError: true,
+          };
+        }
       },
     );
 
@@ -72,28 +112,50 @@ export class MemoryMCP extends McpAgent<Env, Record<string, never>, Props> {
           .describe("Maximum results to return."),
       },
       async ({ query, limit }) => {
-        const db = createClient(this.env);
-        const results = await recallTool(this.env, db, { query, limit });
-
-        if (results.length === 0) {
+        if (query.length > 10_000) {
           return {
-            content: [{ type: "text", text: "No matching memories found." }],
+            content: [
+              {
+                type: "text",
+                text: "Query too long. Maximum 10,000 characters.",
+              },
+            ],
+            isError: true,
           };
         }
 
-        const text = results
-          .map((r) => {
-            const parts = [`[${r.id}] (${r.type}) ${r.content}`];
-            if (r.similarity !== null)
-              parts.push(`  similarity: ${(r.similarity * 100).toFixed(1)}%`);
-            if (r.topics.length > 0)
-              parts.push(`  topics: ${r.topics.join(", ")}`);
-            if (r.stale) parts.push("  ⚠ stale — consider reviewing");
-            return parts.join("\n");
-          })
-          .join("\n\n");
+        try {
+          const db = createClient(this.env);
+          const results = await recallTool(this.env, db, { query, limit });
 
-        return { content: [{ type: "text", text }] };
+          if (results.length === 0) {
+            return {
+              content: [{ type: "text", text: "No matching memories found." }],
+            };
+          }
+
+          const text = results
+            .map((r) => {
+              const parts = [`[${r.id}] (${r.type}) ${r.content}`];
+              if (r.similarity !== null)
+                parts.push(`  similarity: ${(r.similarity * 100).toFixed(1)}%`);
+              if (r.topics.length > 0)
+                parts.push(`  topics: ${r.topics.join(", ")}`);
+              if (r.stale) parts.push("  ⚠ stale — consider reviewing");
+              return parts.join("\n");
+            })
+            .join("\n\n");
+
+          return { content: [{ type: "text", text }] };
+        } catch (err) {
+          console.error("recall failed:", err);
+          return {
+            content: [
+              { type: "text", text: "Search failed. Please try again." },
+            ],
+            isError: true,
+          };
+        }
       },
     );
 
@@ -113,26 +175,39 @@ export class MemoryMCP extends McpAgent<Env, Record<string, never>, Props> {
           .describe("Optional filter by thought type."),
       },
       async ({ limit, type }) => {
-        const db = createClient(this.env);
-        const results = await browseTool(db, { limit, type });
+        try {
+          const db = createClient(this.env);
+          const results = await browseTool(db, { limit, type });
 
-        if (results.length === 0) {
+          if (results.length === 0) {
+            return {
+              content: [{ type: "text", text: "No thoughts stored yet." }],
+            };
+          }
+
+          const text = results
+            .map((r) => {
+              const parts = [`[${r.id}] (${r.type}) ${r.content}`];
+              if (r.topics.length > 0)
+                parts.push(`  topics: ${r.topics.join(", ")}`);
+              parts.push(`  created: ${r.created_at}`);
+              return parts.join("\n");
+            })
+            .join("\n\n");
+
+          return { content: [{ type: "text", text }] };
+        } catch (err) {
+          console.error("browse failed:", err);
           return {
-            content: [{ type: "text", text: "No thoughts stored yet." }],
+            content: [
+              {
+                type: "text",
+                text: "Failed to browse thoughts. Please try again.",
+              },
+            ],
+            isError: true,
           };
         }
-
-        const text = results
-          .map((r) => {
-            const parts = [`[${r.id}] (${r.type}) ${r.content}`];
-            if (r.topics.length > 0)
-              parts.push(`  topics: ${r.topics.join(", ")}`);
-            parts.push(`  created: ${r.created_at}`);
-            return parts.join("\n");
-          })
-          .join("\n\n");
-
-        return { content: [{ type: "text", text }] };
       },
     );
 
@@ -141,14 +216,27 @@ export class MemoryMCP extends McpAgent<Env, Record<string, never>, Props> {
       "Soft-delete a thought by ID.",
       { id: z.string().describe("The thought ID to forget.") },
       async ({ id }) => {
-        const db = createClient(this.env);
-        const deleted = await forgetTool(db, id);
+        try {
+          const db = createClient(this.env);
+          const deleted = await forgetTool(db, id);
 
-        const text = deleted
-          ? `Forgotten: ${id}`
-          : `No active thought found with ID "${id}".`;
+          const text = deleted
+            ? `Forgotten: ${id}`
+            : `No active thought found with ID "${id}".`;
 
-        return { content: [{ type: "text", text }] };
+          return { content: [{ type: "text", text }] };
+        } catch (err) {
+          console.error("forget failed:", err);
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Failed to forget thought. Please try again.",
+              },
+            ],
+            isError: true,
+          };
+        }
       },
     );
 
@@ -157,20 +245,33 @@ export class MemoryMCP extends McpAgent<Env, Record<string, never>, Props> {
       "Overview of the memory store — total count, breakdown by type, superseded count, and most recent capture timestamp.",
       {},
       async () => {
-        const db = createClient(this.env);
-        const result = await statsTool(db);
+        try {
+          const db = createClient(this.env);
+          const result = await statsTool(db);
 
-        const parts = [`Total active: ${result.total}`];
-        if (Object.keys(result.byType).length > 0) {
-          const breakdown = Object.entries(result.byType)
-            .map(([t, count]) => `${t}: ${count}`)
-            .join(", ");
-          parts.push(`By type: ${breakdown}`);
+          const parts = [`Total active: ${result.total}`];
+          if (Object.keys(result.byType).length > 0) {
+            const breakdown = Object.entries(result.byType)
+              .map(([t, count]) => `${t}: ${count}`)
+              .join(", ");
+            parts.push(`By type: ${breakdown}`);
+          }
+          parts.push(`Superseded: ${result.superseded}`);
+          parts.push(`Most recent: ${result.mostRecent ?? "none"}`);
+
+          return { content: [{ type: "text", text: parts.join("\n") }] };
+        } catch (err) {
+          console.error("stats failed:", err);
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Failed to retrieve stats. Please try again.",
+              },
+            ],
+            isError: true,
+          };
         }
-        parts.push(`Superseded: ${result.superseded}`);
-        parts.push(`Most recent: ${result.mostRecent ?? "none"}`);
-
-        return { content: [{ type: "text", text: parts.join("\n") }] };
       },
     );
   }

@@ -50,8 +50,10 @@ describe("embed", () => {
     );
   });
 
-  it("throws on API error", async () => {
-    mockFetchResponse("Internal Server Error", false);
+  it("throws on non-retryable API error", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response("Bad Request", { status: 400 }),
+    );
 
     await expect(embed(env, "test")).rejects.toThrow("OpenAI embedding failed");
   });
@@ -98,8 +100,10 @@ describe("extractMetadata", () => {
     expect(result.action_items).toEqual([]);
   });
 
-  it("throws on API error", async () => {
-    mockFetchResponse("Internal Server Error", false);
+  it("throws on non-retryable API error", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response("Bad Request", { status: 400 }),
+    );
 
     await expect(extractMetadata(env, "test")).rejects.toThrow(
       "OpenAI metadata extraction failed",
