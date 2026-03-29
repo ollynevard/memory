@@ -1,8 +1,7 @@
-import type { Client } from "@libsql/client/web";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { LIMITS } from "../constants";
-import { parseThoughtRow, statusClause } from "../services/db";
+import type { ThoughtRepository } from "../repository";
 
 export interface BrowseOptions {
   limit?: number;
@@ -20,26 +19,19 @@ export interface BrowseResult {
 }
 
 export async function browse(
-  db: Client,
+  repo: ThoughtRepository,
   options: BrowseOptions,
 ): Promise<BrowseResult[]> {
   const limit = Math.min(
     Math.max(options.limit ?? LIMITS.BROWSE_DEFAULT, 1),
     LIMITS.BROWSE_MAX,
   );
-  const status = statusClause(undefined, options.includeSuperseded);
-  const typeClause = options.type ? "AND type = :type" : "";
 
-  const result = await db.execute({
-    sql: `SELECT id, content, type, topics, people, created_at
-          FROM thoughts
-          WHERE ${status} ${typeClause}
-          ORDER BY created_at DESC
-          LIMIT :limit`,
-    args: { limit, ...(options.type ? { type: options.type } : {}) },
+  return repo.browse({
+    limit,
+    type: options.type,
+    includeSuperseded: options.includeSuperseded,
   });
-
-  return result.rows.map(parseThoughtRow);
 }
 
 export const schema = {
@@ -53,11 +45,11 @@ export const schema = {
 };
 
 export async function handler(
-  db: Client,
+  repo: ThoughtRepository,
   { limit, type }: { limit: number; type?: string },
 ): Promise<CallToolResult> {
   try {
-    const results = await browse(db, { limit, type });
+    const results = await browse(repo, { limit, type });
 
     if (results.length === 0) {
       return {

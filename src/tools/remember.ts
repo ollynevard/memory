@@ -1,9 +1,9 @@
-import type { Client, InStatement } from "@libsql/client/web";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { LIMITS } from "../constants";
 import { DuplicateThoughtError } from "../errors";
-import { embeddingToJson, generateId } from "../services/db";
+import type { ThoughtRepository } from "../repository";
+import { generateId } from "../services/db";
 import type { ChatModel, Embedder } from "../services/llm";
 import { timed } from "../services/logger";
 import { extractMetadata } from "../services/openai";
@@ -21,7 +21,7 @@ export interface RememberResult {
 export async function remember(
   embedder: Embedder,
   chat: ChatModel,
-  db: Client,
+  repo: ThoughtRepository,
   content: string,
 ): Promise<RememberResult> {
   // 1. Fan out parallel LLM calls: embedding + metadata extraction
@@ -32,59 +32,33 @@ export async function remember(
 
   // 2. Dedup + supersede check (read-only)
   const supersedeResult = await timed("check_supersede", () =>
-    checkSupersede(chat, db, content, embedding),
+    checkSupersede(chat, repo, content, embedding),
   );
 
   if (supersedeResult.isDuplicate) {
     throw new DuplicateThoughtError();
   }
 
-  // 3. Build atomic batch of all writes
+  // 3. Build thought and persist
   const id = generateId();
-  const embeddingJson = embeddingToJson(embedding);
+  const thought = {
+    id,
+    content,
+    embedding,
+    type: metadata.type,
+    topics: metadata.topics,
+    people: metadata.people,
+    action_items: metadata.action_items,
+  };
 
-  const statements: InStatement[] = [
-    // Insert the new thought
-    {
-      sql: `INSERT INTO thoughts (id, content, embedding, type, topics, people, action_items)
-            VALUES (:id, :content, vector(:embedding), :type, :topics, :people, :action_items)`,
-      args: {
-        id,
-        content,
-        embedding: embeddingJson,
-        type: metadata.type,
-        topics: JSON.stringify(metadata.topics),
-        people: JSON.stringify(metadata.people),
-        action_items: JSON.stringify(metadata.action_items),
-      },
-    },
-    // Sync FTS index
-    {
-      sql: `INSERT INTO thought_fts (rowid, content)
-            SELECT rowid, content FROM thoughts WHERE id = :id`,
-      args: { id },
-    },
-  ];
-
-  // If superseding, update old thought and clean up its FTS entry
   if (supersedeResult.supersedes) {
-    const oldId = supersedeResult.supersedes.id;
-    statements.push(
-      {
-        sql: `UPDATE thoughts SET status = 'superseded', superseded_by = :newId, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = :oldId`,
-        args: { newId: id, oldId },
-      },
-      {
-        sql: `DELETE FROM thought_fts WHERE rowid = (SELECT rowid FROM thoughts WHERE id = :id)`,
-        args: { id: oldId },
-      },
+    const supersedesId = supersedeResult.supersedes.id;
+    await timed("db_write", () =>
+      repo.insertAndSupersede(thought, supersedesId),
     );
+  } else {
+    await timed("db_write", () => repo.insert(thought));
   }
-
-  // 4. Execute all writes atomically
-  await timed("db_write", () => db.batch(statements, "write"), {
-    statements: statements.length,
-  });
 
   return {
     id,
@@ -109,7 +83,7 @@ export interface RememberDeps {
 
 export async function handler(
   deps: RememberDeps,
-  db: Client,
+  repo: ThoughtRepository,
   { content }: { content: string },
 ): Promise<CallToolResult> {
   if (content.length > LIMITS.REMEMBER_CONTENT) {
@@ -122,7 +96,7 @@ export async function handler(
   }
 
   try {
-    const result = await remember(deps.embedder, deps.chat, db, content);
+    const result = await remember(deps.embedder, deps.chat, repo, content);
 
     const parts = [`Remembered (${result.id}): ${result.type}`];
     if (result.topics.length > 0)

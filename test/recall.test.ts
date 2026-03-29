@@ -1,5 +1,9 @@
-import type { Client } from "@libsql/client/web";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  ThoughtRepository,
+  ThoughtRow,
+  VectorSearchResult,
+} from "../src/repository";
 import type { Embedder } from "../src/services/llm";
 import { recall } from "../src/tools/recall";
 
@@ -11,31 +15,47 @@ const mockEmbedder: Embedder = {
     .mockResolvedValue(FAKE_EMBEDDING),
 };
 
-function makeRow(overrides: Record<string, unknown> = {}) {
+function makeVectorResult(
+  overrides: Partial<VectorSearchResult> = {},
+): VectorSearchResult {
   return {
     id: "abc123",
     content: "test thought",
     type: "observation",
-    topics: '["testing"]',
-    people: "[]",
+    topics: ["testing"],
+    people: [],
     created_at: new Date().toISOString(),
     distance: 0.1,
     ...overrides,
   };
 }
 
-function mockDb(
-  vectorRows: Record<string, unknown>[] = [],
-  ftsRows: Record<string, unknown>[] = [],
-): Client {
-  const execute = vi
-    .fn()
-    // First call: vector search
-    .mockResolvedValueOnce({ rows: vectorRows })
-    // Second call: FTS search
-    .mockResolvedValueOnce({ rows: ftsRows });
+function makeFtsResult(overrides: Partial<ThoughtRow> = {}): ThoughtRow {
+  return {
+    id: "abc123",
+    content: "test thought",
+    type: "observation",
+    topics: ["testing"],
+    people: [],
+    created_at: new Date().toISOString(),
+    ...overrides,
+  };
+}
 
-  return { execute } as unknown as Client;
+function mockRepo(
+  vectorResults: VectorSearchResult[] = [],
+  ftsResults: ThoughtRow[] = [],
+): ThoughtRepository {
+  return {
+    insert: vi.fn(),
+    insertAndSupersede: vi.fn(),
+    vectorSearch: vi.fn().mockResolvedValue(vectorResults),
+    ftsSearch: vi.fn().mockResolvedValue(ftsResults),
+    findSimilarActive: vi.fn(),
+    browse: vi.fn(),
+    softDelete: vi.fn(),
+    stats: vi.fn(),
+  } as ThoughtRepository;
 }
 
 describe("recall", () => {
@@ -45,9 +65,9 @@ describe("recall", () => {
   });
 
   it("returns vector results above threshold", async () => {
-    const db = mockDb([makeRow({ distance: 0.1 })]);
+    const repo = mockRepo([makeVectorResult({ distance: 0.1 })]);
 
-    const results = await recall(mockEmbedder, db, { query: "test" });
+    const results = await recall(mockEmbedder, repo, { query: "test" });
 
     expect(results).toHaveLength(1);
     expect(results[0].id).toBe("abc123");
@@ -55,9 +75,9 @@ describe("recall", () => {
   });
 
   it("filters out vector results below threshold", async () => {
-    const db = mockDb([makeRow({ distance: 0.5 })]);
+    const repo = mockRepo([makeVectorResult({ distance: 0.5 })]);
 
-    const results = await recall(mockEmbedder, db, {
+    const results = await recall(mockEmbedder, repo, {
       query: "test",
       threshold: 0.7,
     });
@@ -66,12 +86,12 @@ describe("recall", () => {
   });
 
   it("includes FTS results not in vector results", async () => {
-    const db = mockDb(
-      [makeRow({ id: "vec1", distance: 0.05 })],
-      [makeRow({ id: "fts1", fts_rank: -5 })],
+    const repo = mockRepo(
+      [makeVectorResult({ id: "vec1", distance: 0.05 })],
+      [makeFtsResult({ id: "fts1" })],
     );
 
-    const results = await recall(mockEmbedder, db, { query: "test" });
+    const results = await recall(mockEmbedder, repo, { query: "test" });
 
     expect(results).toHaveLength(2);
     expect(results[0].id).toBe("vec1");
@@ -80,12 +100,12 @@ describe("recall", () => {
   });
 
   it("deduplicates by thought ID", async () => {
-    const db = mockDb(
-      [makeRow({ id: "same", distance: 0.1 })],
-      [makeRow({ id: "same", fts_rank: -5 })],
+    const repo = mockRepo(
+      [makeVectorResult({ id: "same", distance: 0.1 })],
+      [makeFtsResult({ id: "same" })],
     );
 
-    const results = await recall(mockEmbedder, db, { query: "test" });
+    const results = await recall(mockEmbedder, repo, { query: "test" });
 
     expect(results).toHaveLength(1);
     expect(results[0].id).toBe("same");
@@ -93,26 +113,26 @@ describe("recall", () => {
   });
 
   it("sorts vector results before FTS results", async () => {
-    const db = mockDb(
+    const repo = mockRepo(
       [
-        makeRow({ id: "vec1", distance: 0.15 }),
-        makeRow({ id: "vec2", distance: 0.05 }),
+        makeVectorResult({ id: "vec1", distance: 0.15 }),
+        makeVectorResult({ id: "vec2", distance: 0.05 }),
       ],
-      [makeRow({ id: "fts1", fts_rank: -10 })],
+      [makeFtsResult({ id: "fts1" })],
     );
 
-    const results = await recall(mockEmbedder, db, { query: "test" });
+    const results = await recall(mockEmbedder, repo, { query: "test" });
 
     expect(results.map((r) => r.id)).toEqual(["vec2", "vec1", "fts1"]);
   });
 
   it("applies type filter", async () => {
-    const db = mockDb([
-      makeRow({ id: "a", type: "decision", distance: 0.1 }),
-      makeRow({ id: "b", type: "observation", distance: 0.1 }),
+    const repo = mockRepo([
+      makeVectorResult({ id: "a", type: "decision", distance: 0.1 }),
+      makeVectorResult({ id: "b", type: "observation", distance: 0.1 }),
     ]);
 
-    const results = await recall(mockEmbedder, db, {
+    const results = await recall(mockEmbedder, repo, {
       query: "test",
       filter: { type: "decision" },
     });
@@ -122,12 +142,12 @@ describe("recall", () => {
   });
 
   it("applies topics filter", async () => {
-    const db = mockDb([
-      makeRow({ id: "a", topics: '["database"]', distance: 0.1 }),
-      makeRow({ id: "b", topics: '["frontend"]', distance: 0.1 }),
+    const repo = mockRepo([
+      makeVectorResult({ id: "a", topics: ["database"], distance: 0.1 }),
+      makeVectorResult({ id: "b", topics: ["frontend"], distance: 0.1 }),
     ]);
 
-    const results = await recall(mockEmbedder, db, {
+    const results = await recall(mockEmbedder, repo, {
       query: "test",
       filter: { topics: ["database"] },
     });
@@ -140,8 +160,8 @@ describe("recall", () => {
     const old = new Date();
     old.setDate(old.getDate() - 200);
 
-    const db = mockDb([
-      makeRow({
+    const repo = mockRepo([
+      makeVectorResult({
         id: "old",
         type: "decision",
         created_at: old.toISOString(),
@@ -149,53 +169,53 @@ describe("recall", () => {
       }),
     ]);
 
-    const results = await recall(mockEmbedder, db, { query: "test" });
+    const results = await recall(mockEmbedder, repo, { query: "test" });
 
     expect(results[0].stale).toBe(true);
   });
 
   it("does not flag recent thoughts as stale", async () => {
-    const db = mockDb([
-      makeRow({
+    const repo = mockRepo([
+      makeVectorResult({
         type: "decision",
         created_at: new Date().toISOString(),
         distance: 0.1,
       }),
     ]);
 
-    const results = await recall(mockEmbedder, db, { query: "test" });
+    const results = await recall(mockEmbedder, repo, { query: "test" });
 
     expect(results[0].stale).toBe(false);
   });
 
-  it("clamps limit to 1-50 range", async () => {
-    const db = mockDb();
-    await recall(mockEmbedder, db, { query: "test", limit: 100 });
+  it("passes clamped limit to repository", async () => {
+    const repo = mockRepo();
+    await recall(mockEmbedder, repo, { query: "test", limit: 100 });
 
-    const vectorCall = vi.mocked(db.execute).mock.calls[0];
-    const args = (vectorCall[0] as unknown as { args: Record<string, unknown> })
-      .args;
-    expect(args.limit).toBe(50);
+    expect(repo.vectorSearch).toHaveBeenCalledWith(
+      FAKE_EMBEDDING,
+      expect.objectContaining({ limit: 50 }),
+    );
   });
 
   it("returns empty array when no results match", async () => {
-    const db = mockDb();
+    const repo = mockRepo();
 
-    const results = await recall(mockEmbedder, db, { query: "nonexistent" });
+    const results = await recall(mockEmbedder, repo, { query: "nonexistent" });
 
     expect(results).toEqual([]);
   });
 
-  it("parses topics and people from JSON strings", async () => {
-    const db = mockDb([
-      makeRow({
-        topics: '["arch","db"]',
-        people: '["Sarah","Tom"]',
+  it("preserves topics and people arrays from repository", async () => {
+    const repo = mockRepo([
+      makeVectorResult({
+        topics: ["arch", "db"],
+        people: ["Sarah", "Tom"],
         distance: 0.1,
       }),
     ]);
 
-    const results = await recall(mockEmbedder, db, { query: "test" });
+    const results = await recall(mockEmbedder, repo, { query: "test" });
 
     expect(results[0].topics).toEqual(["arch", "db"]);
     expect(results[0].people).toEqual(["Sarah", "Tom"]);

@@ -1,8 +1,7 @@
-import type { Client } from "@libsql/client/web";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { LIMITS, SIMILARITY, STALENESS_DAYS } from "../constants";
-import { embeddingToJson, parseThoughtRow, statusClause } from "../services/db";
+import type { ThoughtRepository } from "../repository";
 import type { Embedder } from "../services/llm";
 import { timed } from "../services/logger";
 
@@ -38,7 +37,7 @@ function isStale(type: string, createdAt: string): boolean {
 
 export async function recall(
   embedder: Embedder,
-  db: Client,
+  repo: ThoughtRepository,
   options: RecallOptions,
 ): Promise<RecallResult[]> {
   const limit = Math.min(
@@ -50,58 +49,42 @@ export async function recall(
   const queryEmbedding = await timed("embed", () =>
     embedder.embed(options.query),
   );
-  const embeddingJson = embeddingToJson(queryEmbedding);
 
   // 2. Run semantic and FTS search in parallel
+  const searchOpts = { limit, includeSuperseded: options.includeSuperseded };
   const [vectorResults, ftsResults] = await timed("db_search", () =>
     Promise.all([
-      db.execute({
-        sql: `SELECT id, content, type, topics, people, created_at,
-                vector_distance_cos(embedding, vector(:embedding)) as distance
-              FROM thoughts
-              WHERE ${statusClause(undefined, options.includeSuperseded)}
-              ORDER BY vector_distance_cos(embedding, vector(:embedding))
-              LIMIT :limit`,
-        args: { embedding: embeddingJson, limit },
-      }),
-      db.execute({
-        sql: `SELECT t.id, t.content, t.type, t.topics, t.people, t.created_at,
-                rank as fts_rank
-              FROM thought_fts f
-              JOIN thoughts t ON f.rowid = t.rowid
-              WHERE thought_fts MATCH :query AND ${statusClause("t", options.includeSuperseded)}
-              ORDER BY rank
-              LIMIT :limit`,
-        args: { query: options.query, limit },
-      }),
+      repo.vectorSearch(queryEmbedding, searchOpts),
+      repo.ftsSearch(options.query, searchOpts),
     ]),
   );
 
   // 3. Merge and deduplicate by thought ID
   const seen = new Map<string, RecallResult>();
 
-  for (const row of vectorResults.rows) {
-    const distance = row.distance as number;
-    const similarity = 1 - distance;
+  for (const row of vectorResults) {
+    const similarity = 1 - row.distance;
     if (similarity < threshold) continue;
 
-    const thought = parseThoughtRow(row);
-    seen.set(thought.id, {
-      ...thought,
+    seen.set(row.id, {
+      id: row.id,
+      content: row.content,
+      type: row.type,
+      topics: row.topics,
+      people: row.people,
+      created_at: row.created_at,
       similarity,
-      stale: isStale(thought.type, thought.created_at),
+      stale: isStale(row.type, row.created_at),
     });
   }
 
-  for (const row of ftsResults.rows) {
-    const id = row.id as string;
-    if (seen.has(id)) continue;
+  for (const row of ftsResults) {
+    if (seen.has(row.id)) continue;
 
-    const thought = parseThoughtRow(row);
-    seen.set(thought.id, {
-      ...thought,
+    seen.set(row.id, {
+      ...row,
       similarity: null,
-      stale: isStale(thought.type, thought.created_at),
+      stale: isStale(row.type, row.created_at),
     });
   }
 
@@ -144,7 +127,7 @@ export interface RecallDeps {
 
 export async function handler(
   deps: RecallDeps,
-  db: Client,
+  repo: ThoughtRepository,
   { query, limit }: { query: string; limit: number },
 ): Promise<CallToolResult> {
   if (query.length > LIMITS.RECALL_QUERY) {
@@ -157,7 +140,7 @@ export async function handler(
   }
 
   try {
-    const results = await recall(deps.embedder, db, { query, limit });
+    const results = await recall(deps.embedder, repo, { query, limit });
 
     if (results.length === 0) {
       return {

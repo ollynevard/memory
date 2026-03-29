@@ -1,5 +1,5 @@
-import type { Client, InStatement } from "@libsql/client/web";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ThoughtRepository } from "../src/repository";
 import type { ChatModel, Embedder } from "../src/services/llm";
 
 // Mock extractMetadata (still in openai.ts but now takes ChatModel)
@@ -42,27 +42,25 @@ const mockChat: ChatModel = {
   complete: vi.fn().mockResolvedValue("{}"),
 };
 
-function mockDb(overrides: Partial<Client> = {}): Client {
+function mockRepo(
+  overrides: Partial<ThoughtRepository> = {},
+): ThoughtRepository {
   return {
-    execute: vi.fn().mockResolvedValue({
-      rows: [],
-      columns: [],
-      columnTypes: [],
-      rowsAffected: 1,
-      lastInsertRowid: undefined,
+    insert: vi.fn().mockResolvedValue(undefined),
+    insertAndSupersede: vi.fn().mockResolvedValue(undefined),
+    vectorSearch: vi.fn().mockResolvedValue([]),
+    ftsSearch: vi.fn().mockResolvedValue([]),
+    findSimilarActive: vi.fn().mockResolvedValue([]),
+    browse: vi.fn().mockResolvedValue([]),
+    softDelete: vi.fn().mockResolvedValue(true),
+    stats: vi.fn().mockResolvedValue({
+      total: 0,
+      byType: {},
+      superseded: 0,
+      mostRecent: null,
     }),
-    batch: vi.fn().mockResolvedValue([
-      { rows: [], rowsAffected: 1 },
-      { rows: [], rowsAffected: 1 },
-    ]),
-    transaction: vi.fn(),
-    executeMultiple: vi.fn(),
-    sync: vi.fn(),
-    close: vi.fn(),
-    closed: false,
-    protocol: "http",
     ...overrides,
-  } as Client;
+  };
 }
 
 describe("remember", () => {
@@ -81,12 +79,12 @@ describe("remember", () => {
   });
 
   it("stores a thought and returns metadata", async () => {
-    const db = mockDb();
+    const repo = mockRepo();
 
     const result = await remember(
       mockEmbedder,
       mockChat,
-      db,
+      repo,
       "Vitest is great for testing",
     );
 
@@ -101,76 +99,52 @@ describe("remember", () => {
   });
 
   it("calls embedder and extractMetadata in parallel", async () => {
-    const db = mockDb();
+    const repo = mockRepo();
 
-    await remember(mockEmbedder, mockChat, db, "some thought");
+    await remember(mockEmbedder, mockChat, repo, "some thought");
 
     expect(mockEmbedder.embed).toHaveBeenCalledWith("some thought");
     expect(mockExtractMetadata).toHaveBeenCalledWith(mockChat, "some thought");
   });
 
   it("runs dedup check with embedding", async () => {
-    const db = mockDb();
+    const repo = mockRepo();
 
-    await remember(mockEmbedder, mockChat, db, "some thought");
+    await remember(mockEmbedder, mockChat, repo, "some thought");
 
     expect(mockCheckSupersede).toHaveBeenCalledWith(
       mockChat,
-      db,
+      repo,
       "some thought",
       FAKE_EMBEDDING,
     );
   });
 
   it("rejects duplicates", async () => {
-    const db = mockDb();
+    const repo = mockRepo();
     mockCheckSupersede.mockResolvedValue({ isDuplicate: true });
 
     await expect(
-      remember(mockEmbedder, mockChat, db, "duplicate thought"),
+      remember(mockEmbedder, mockChat, repo, "duplicate thought"),
     ).rejects.toThrow("too similar to an existing memory");
   });
 
-  it("batches insert thought and FTS in a single write", async () => {
-    const db = mockDb();
-    const batch = vi.mocked(db.batch);
+  it("calls repo.insert for new thoughts", async () => {
+    const repo = mockRepo();
 
-    await remember(mockEmbedder, mockChat, db, "some thought");
+    await remember(mockEmbedder, mockChat, repo, "some thought");
 
-    expect(batch).toHaveBeenCalledOnce();
-    const [statements, mode] = batch.mock.calls[0];
-    expect(mode).toBe("write");
-
-    const stmts = statements as InStatement[];
-    expect(stmts).toHaveLength(2);
-
-    // First statement: INSERT INTO thoughts
-    const insertStmt = stmts[0] as {
-      sql: string;
-      args: Record<string, unknown>;
-    };
-    expect(insertStmt.sql).toContain("INSERT INTO thoughts");
-    expect(insertStmt.args.id).toBe("generated-id-abc");
-    expect(insertStmt.args.content).toBe("some thought");
-    expect(insertStmt.args.type).toBe("observation");
-    expect(insertStmt.args.topics).toBe('["testing"]');
-
-    // Second statement: INSERT INTO thought_fts
-    const ftsStmt = stmts[1] as { sql: string; args: Record<string, unknown> };
-    expect(ftsStmt.sql).toContain("INSERT INTO thought_fts");
-    expect(ftsStmt.args.id).toBe("generated-id-abc");
+    expect(repo.insert).toHaveBeenCalledOnce();
+    const thought = vi.mocked(repo.insert).mock.calls[0][0];
+    expect(thought.id).toBe("generated-id-abc");
+    expect(thought.content).toBe("some thought");
+    expect(thought.type).toBe("observation");
+    expect(thought.topics).toEqual(["testing"]);
+    expect(thought.embedding).toBe(FAKE_EMBEDDING);
   });
 
-  it("handles superseded thoughts with atomic batch", async () => {
-    const db = mockDb({
-      batch: vi.fn().mockResolvedValue([
-        { rows: [], rowsAffected: 1 },
-        { rows: [], rowsAffected: 1 },
-        { rows: [], rowsAffected: 1 },
-        { rows: [], rowsAffected: 1 },
-      ]),
-    });
-    const batch = vi.mocked(db.batch);
+  it("calls repo.insertAndSupersede when superseding", async () => {
+    const repo = mockRepo();
 
     mockCheckSupersede.mockResolvedValue({
       isDuplicate: false,
@@ -181,42 +155,27 @@ describe("remember", () => {
       },
     });
 
-    const result = await remember(mockEmbedder, mockChat, db, "new thought");
+    const result = await remember(mockEmbedder, mockChat, repo, "new thought");
 
     expect(result.superseded).toEqual({
       id: "old123",
       reason: "Updated with new info",
     });
 
-    const [statements] = batch.mock.calls[0];
-    const stmts = statements as InStatement[];
-    expect(stmts).toHaveLength(4);
-
-    // Third statement: UPDATE old thought status
-    const updateStmt = stmts[2] as {
-      sql: string;
-      args: Record<string, unknown>;
-    };
-    expect(updateStmt.sql).toContain("status = 'superseded'");
-    expect(updateStmt.args.newId).toBe("generated-id-abc");
-    expect(updateStmt.args.oldId).toBe("old123");
-
-    // Fourth statement: DELETE old FTS entry
-    const deleteFtsStmt = stmts[3] as {
-      sql: string;
-      args: Record<string, unknown>;
-    };
-    expect(deleteFtsStmt.sql).toContain("DELETE FROM thought_fts");
-    expect(deleteFtsStmt.args.id).toBe("old123");
+    expect(repo.insertAndSupersede).toHaveBeenCalledOnce();
+    const [thought, supersedesId] = vi.mocked(repo.insertAndSupersede).mock
+      .calls[0];
+    expect(thought.id).toBe("generated-id-abc");
+    expect(thought.content).toBe("new thought");
+    expect(supersedesId).toBe("old123");
   });
 
-  it("does not include supersede statements when nothing superseded", async () => {
-    const db = mockDb();
-    const batch = vi.mocked(db.batch);
+  it("does not call insertAndSupersede when nothing superseded", async () => {
+    const repo = mockRepo();
 
-    await remember(mockEmbedder, mockChat, db, "fresh thought");
+    await remember(mockEmbedder, mockChat, repo, "fresh thought");
 
-    const [statements] = batch.mock.calls[0];
-    expect(statements).toHaveLength(2);
+    expect(repo.insert).toHaveBeenCalledOnce();
+    expect(repo.insertAndSupersede).not.toHaveBeenCalled();
   });
 });
