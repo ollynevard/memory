@@ -1,5 +1,4 @@
 import type { Client } from "@libsql/client/web";
-import type { Env } from "../index";
 import { embeddingToJson } from "./db";
 import { chatCompletion } from "./openai";
 
@@ -15,7 +14,7 @@ OLD: {old_content}
 NEW: {new_content}`;
 
 export async function checkSupersede(
-  env: Env,
+  apiKey: string,
   db: Client,
   newContent: string,
   newEmbedding: number[],
@@ -49,9 +48,13 @@ export async function checkSupersede(
 
       let raw: string;
       try {
-        raw = await chatCompletion(env, [{ role: "user", content: prompt }], {
-          jsonMode: true,
-        });
+        raw = await chatCompletion(
+          apiKey,
+          [{ role: "user", content: prompt }],
+          {
+            jsonMode: true,
+          },
+        );
       } catch (err) {
         console.error("Supersede LLM call failed:", err);
         continue;

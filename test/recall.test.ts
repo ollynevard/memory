@@ -1,6 +1,5 @@
 import type { Client } from "@libsql/client/web";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Env } from "../src/index";
 
 vi.mock("../src/services/openai", () => ({
   embed: vi.fn(),
@@ -11,11 +10,7 @@ import { recall } from "../src/tools/recall";
 
 const mockEmbed = vi.mocked(embed);
 
-const TEST_ENV = {
-  OPENAI_API_KEY: "test-key",
-  TURSO_URL: "http://localhost:8080",
-  TURSO_AUTH_TOKEN: "test-token",
-} as unknown as Env;
+const TEST_API_KEY = "test-key";
 
 const FAKE_EMBEDDING = Array.from({ length: 1536 }, () => 0.1);
 
@@ -55,7 +50,7 @@ describe("recall", () => {
   it("returns vector results above threshold", async () => {
     const db = mockDb([makeRow({ distance: 0.1 })]);
 
-    const results = await recall(TEST_ENV, db, { query: "test" });
+    const results = await recall(TEST_API_KEY, db, { query: "test" });
 
     expect(results).toHaveLength(1);
     expect(results[0].id).toBe("abc123");
@@ -65,7 +60,7 @@ describe("recall", () => {
   it("filters out vector results below threshold", async () => {
     const db = mockDb([makeRow({ distance: 0.5 })]);
 
-    const results = await recall(TEST_ENV, db, {
+    const results = await recall(TEST_API_KEY, db, {
       query: "test",
       threshold: 0.7,
     });
@@ -79,7 +74,7 @@ describe("recall", () => {
       [makeRow({ id: "fts1", fts_rank: -5 })],
     );
 
-    const results = await recall(TEST_ENV, db, { query: "test" });
+    const results = await recall(TEST_API_KEY, db, { query: "test" });
 
     expect(results).toHaveLength(2);
     expect(results[0].id).toBe("vec1");
@@ -93,7 +88,7 @@ describe("recall", () => {
       [makeRow({ id: "same", fts_rank: -5 })],
     );
 
-    const results = await recall(TEST_ENV, db, { query: "test" });
+    const results = await recall(TEST_API_KEY, db, { query: "test" });
 
     expect(results).toHaveLength(1);
     expect(results[0].id).toBe("same");
@@ -109,7 +104,7 @@ describe("recall", () => {
       [makeRow({ id: "fts1", fts_rank: -10 })],
     );
 
-    const results = await recall(TEST_ENV, db, { query: "test" });
+    const results = await recall(TEST_API_KEY, db, { query: "test" });
 
     expect(results.map((r) => r.id)).toEqual(["vec2", "vec1", "fts1"]);
   });
@@ -120,7 +115,7 @@ describe("recall", () => {
       makeRow({ id: "b", type: "observation", distance: 0.1 }),
     ]);
 
-    const results = await recall(TEST_ENV, db, {
+    const results = await recall(TEST_API_KEY, db, {
       query: "test",
       filter: { type: "decision" },
     });
@@ -135,7 +130,7 @@ describe("recall", () => {
       makeRow({ id: "b", topics: '["frontend"]', distance: 0.1 }),
     ]);
 
-    const results = await recall(TEST_ENV, db, {
+    const results = await recall(TEST_API_KEY, db, {
       query: "test",
       filter: { topics: ["database"] },
     });
@@ -157,7 +152,7 @@ describe("recall", () => {
       }),
     ]);
 
-    const results = await recall(TEST_ENV, db, { query: "test" });
+    const results = await recall(TEST_API_KEY, db, { query: "test" });
 
     expect(results[0].stale).toBe(true);
   });
@@ -171,14 +166,14 @@ describe("recall", () => {
       }),
     ]);
 
-    const results = await recall(TEST_ENV, db, { query: "test" });
+    const results = await recall(TEST_API_KEY, db, { query: "test" });
 
     expect(results[0].stale).toBe(false);
   });
 
   it("clamps limit to 1-50 range", async () => {
     const db = mockDb();
-    await recall(TEST_ENV, db, { query: "test", limit: 100 });
+    await recall(TEST_API_KEY, db, { query: "test", limit: 100 });
 
     const vectorCall = vi.mocked(db.execute).mock.calls[0];
     const args = (vectorCall[0] as unknown as { args: Record<string, unknown> })
@@ -189,7 +184,7 @@ describe("recall", () => {
   it("returns empty array when no results match", async () => {
     const db = mockDb();
 
-    const results = await recall(TEST_ENV, db, { query: "nonexistent" });
+    const results = await recall(TEST_API_KEY, db, { query: "nonexistent" });
 
     expect(results).toEqual([]);
   });
@@ -203,7 +198,7 @@ describe("recall", () => {
       }),
     ]);
 
-    const results = await recall(TEST_ENV, db, { query: "test" });
+    const results = await recall(TEST_API_KEY, db, { query: "test" });
 
     expect(results[0].topics).toEqual(["arch", "db"]);
     expect(results[0].people).toEqual(["Sarah", "Tom"]);

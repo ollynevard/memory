@@ -1,7 +1,6 @@
 import type { Client } from "@libsql/client/web";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import type { Env } from "../index";
 import {
   createClient,
   embeddingToJson,
@@ -43,7 +42,7 @@ function isStale(type: string, createdAt: string): boolean {
 }
 
 export async function recall(
-  env: Env,
+  apiKey: string,
   db: Client,
   options: RecallOptions,
 ): Promise<RecallResult[]> {
@@ -52,7 +51,9 @@ export async function recall(
   const status = statusFilter(options.includeSuperseded);
 
   // 1. Embed query
-  const queryEmbedding = await timed("embed", () => embed(env, options.query));
+  const queryEmbedding = await timed("embed", () =>
+    embed(apiKey, options.query),
+  );
   const embeddingJson = embeddingToJson(queryEmbedding);
 
   // 2. Run semantic and FTS search in parallel
@@ -141,8 +142,14 @@ export const schema = {
     .describe("Maximum results to return."),
 };
 
+export interface RecallEnv {
+  OPENAI_API_KEY: string;
+  TURSO_URL: string;
+  TURSO_AUTH_TOKEN: string;
+}
+
 export async function handler(
-  env: Env,
+  env: RecallEnv,
   { query, limit }: { query: string; limit: number },
 ): Promise<CallToolResult> {
   if (query.length > 10_000) {
@@ -155,8 +162,8 @@ export async function handler(
   }
 
   try {
-    const db = createClient(env);
-    const results = await recall(env, db, { query, limit });
+    const db = createClient(env.TURSO_URL, env.TURSO_AUTH_TOKEN);
+    const results = await recall(env.OPENAI_API_KEY, db, { query, limit });
 
     if (results.length === 0) {
       return {

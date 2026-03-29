@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Env } from "../../src/index";
 import { embed, extractMetadata } from "../../src/services/openai";
 
-const env = { OPENAI_API_KEY: "test-key" } as Env;
+const apiKey = "test-key";
 
 const originalFetch = globalThis.fetch;
 
@@ -28,7 +27,7 @@ describe("embed", () => {
     const embedding = Array.from({ length: 1536 }, () => 0.1);
     mockFetchResponse({ data: [{ embedding }] });
 
-    const result = await embed(env, "test thought");
+    const result = await embed(apiKey, "test thought");
 
     expect(result).toHaveLength(1536);
     expect(result[0]).toBe(0.1);
@@ -37,7 +36,7 @@ describe("embed", () => {
   it("calls the correct OpenAI endpoint", async () => {
     mockFetchResponse({ data: [{ embedding: [0.1] }] });
 
-    await embed(env, "test thought");
+    await embed(apiKey, "test thought");
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "https://api.openai.com/v1/embeddings",
@@ -55,7 +54,9 @@ describe("embed", () => {
       new Response("Bad Request", { status: 400 }),
     );
 
-    await expect(embed(env, "test")).rejects.toThrow("OpenAI embedding failed");
+    await expect(embed(apiKey, "test")).rejects.toThrow(
+      "OpenAI embedding failed",
+    );
   });
 });
 
@@ -77,7 +78,7 @@ describe("extractMetadata", () => {
     });
 
     const result = await extractMetadata(
-      env,
+      apiKey,
       "Sarah suggested we use Postgres for the new project",
     );
 
@@ -92,7 +93,7 @@ describe("extractMetadata", () => {
       choices: [{ message: { content: JSON.stringify({}) } }],
     });
 
-    const result = await extractMetadata(env, "some thought");
+    const result = await extractMetadata(apiKey, "some thought");
 
     expect(result.type).toBe("observation");
     expect(result.topics).toEqual([]);
@@ -105,7 +106,7 @@ describe("extractMetadata", () => {
       new Response("Bad Request", { status: 400 }),
     );
 
-    await expect(extractMetadata(env, "test")).rejects.toThrow(
+    await expect(extractMetadata(apiKey, "test")).rejects.toThrow(
       "OpenAI chat completion failed",
     );
   });
