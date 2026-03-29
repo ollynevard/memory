@@ -1,5 +1,8 @@
 import type { Client } from "@libsql/client/web";
-import { parseThoughtRow, statusFilter } from "../services/db";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
+import type { Env } from "../index";
+import { createClient, parseThoughtRow, statusFilter } from "../services/db";
 
 export interface BrowseOptions {
   limit?: number;
@@ -34,4 +37,49 @@ export async function browse(
   });
 
   return result.rows.map(parseThoughtRow);
+}
+
+export const schema = {
+  limit: z
+    .number()
+    .min(1)
+    .max(100)
+    .default(20)
+    .describe("Maximum results to return."),
+  type: z.string().optional().describe("Optional filter by thought type."),
+};
+
+export async function handler(
+  env: Env,
+  { limit, type }: { limit: number; type?: string },
+): Promise<CallToolResult> {
+  try {
+    const db = createClient(env);
+    const results = await browse(db, { limit, type });
+
+    if (results.length === 0) {
+      return {
+        content: [{ type: "text", text: "No thoughts stored yet." }],
+      };
+    }
+
+    const text = results
+      .map((r) => {
+        const parts = [`[${r.id}] (${r.type}) ${r.content}`];
+        if (r.topics.length > 0) parts.push(`  topics: ${r.topics.join(", ")}`);
+        parts.push(`  created: ${r.created_at}`);
+        return parts.join("\n");
+      })
+      .join("\n\n");
+
+    return { content: [{ type: "text", text }] };
+  } catch (err) {
+    console.error("browse failed:", err);
+    return {
+      content: [
+        { type: "text", text: "Failed to browse thoughts. Please try again." },
+      ],
+      isError: true,
+    };
+  }
 }

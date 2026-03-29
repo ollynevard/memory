@@ -1,4 +1,7 @@
 import type { Client } from "@libsql/client/web";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { Env } from "../index";
+import { createClient } from "../services/db";
 
 export interface StatsResult {
   total: number;
@@ -38,4 +41,31 @@ export async function stats(db: Client): Promise<StatsResult> {
         ? (recentResult.rows[0].created_at as string)
         : null,
   };
+}
+
+export async function handler(env: Env): Promise<CallToolResult> {
+  try {
+    const db = createClient(env);
+    const result = await stats(db);
+
+    const parts = [`Total active: ${result.total}`];
+    if (Object.keys(result.byType).length > 0) {
+      const breakdown = Object.entries(result.byType)
+        .map(([t, count]) => `${t}: ${count}`)
+        .join(", ");
+      parts.push(`By type: ${breakdown}`);
+    }
+    parts.push(`Superseded: ${result.superseded}`);
+    parts.push(`Most recent: ${result.mostRecent ?? "none"}`);
+
+    return { content: [{ type: "text", text: parts.join("\n") }] };
+  } catch (err) {
+    console.error("stats failed:", err);
+    return {
+      content: [
+        { type: "text", text: "Failed to retrieve stats. Please try again." },
+      ],
+      isError: true,
+    };
+  }
 }

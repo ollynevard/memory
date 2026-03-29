@@ -1,6 +1,8 @@
 import type { Client, InStatement } from "@libsql/client/web";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
 import type { Env } from "../index";
-import { embeddingToJson, generateId } from "../services/db";
+import { createClient, embeddingToJson, generateId } from "../services/db";
 import { timed } from "../services/logger";
 import { embed, extractMetadata } from "../services/openai";
 import { checkSupersede } from "../services/supersede";
@@ -93,4 +95,53 @@ export async function remember(
         }
       : undefined,
   };
+}
+
+export const schema = {
+  content: z.string().describe("The thought to remember, in natural language."),
+};
+
+export async function handler(
+  env: Env,
+  { content }: { content: string },
+): Promise<CallToolResult> {
+  if (content.length > 50_000) {
+    return {
+      content: [
+        { type: "text", text: "Content too long. Maximum 50,000 characters." },
+      ],
+      isError: true,
+    };
+  }
+
+  try {
+    const db = createClient(env);
+    const result = await remember(env, db, content);
+
+    const parts = [`Remembered (${result.id}): ${result.type}`];
+    if (result.topics.length > 0)
+      parts.push(`Topics: ${result.topics.join(", ")}`);
+    if (result.people.length > 0)
+      parts.push(`People: ${result.people.join(", ")}`);
+    if (result.action_items.length > 0)
+      parts.push(`Action items: ${result.action_items.join("; ")}`);
+    if (result.superseded)
+      parts.push(
+        `Superseded ${result.superseded.id}: ${result.superseded.reason}`,
+      );
+
+    return { content: [{ type: "text", text: parts.join("\n") }] };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("too similar")) {
+      return { content: [{ type: "text", text: msg }], isError: true };
+    }
+    console.error("remember failed:", err);
+    return {
+      content: [
+        { type: "text", text: "Failed to store thought. Please try again." },
+      ],
+      isError: true,
+    };
+  }
 }

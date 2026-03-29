@@ -1,4 +1,8 @@
 import type { Client } from "@libsql/client/web";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
+import type { Env } from "../index";
+import { createClient } from "../services/db";
 
 export async function forget(db: Client, id: string): Promise<boolean> {
   const results = await db.batch(
@@ -18,4 +22,32 @@ export async function forget(db: Client, id: string): Promise<boolean> {
   );
 
   return results[0].rowsAffected > 0;
+}
+
+export const schema = {
+  id: z.string().describe("The thought ID to forget."),
+};
+
+export async function handler(
+  env: Env,
+  { id }: { id: string },
+): Promise<CallToolResult> {
+  try {
+    const db = createClient(env);
+    const deleted = await forget(db, id);
+
+    const text = deleted
+      ? `Forgotten: ${id}`
+      : `No active thought found with ID "${id}".`;
+
+    return { content: [{ type: "text", text }] };
+  } catch (err) {
+    console.error("forget failed:", err);
+    return {
+      content: [
+        { type: "text", text: "Failed to forget thought. Please try again." },
+      ],
+      isError: true,
+    };
+  }
 }

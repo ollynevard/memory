@@ -1,6 +1,13 @@
 import type { Client } from "@libsql/client/web";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
 import type { Env } from "../index";
-import { embeddingToJson, parseThoughtRow, statusFilter } from "../services/db";
+import {
+  createClient,
+  embeddingToJson,
+  parseThoughtRow,
+  statusFilter,
+} from "../services/db";
 import { timed } from "../services/logger";
 import { embed } from "../services/openai";
 
@@ -122,4 +129,58 @@ export async function recall(
   });
 
   return results.slice(0, limit);
+}
+
+export const schema = {
+  query: z.string().describe("Natural language search query."),
+  limit: z
+    .number()
+    .min(1)
+    .max(50)
+    .default(10)
+    .describe("Maximum results to return."),
+};
+
+export async function handler(
+  env: Env,
+  { query, limit }: { query: string; limit: number },
+): Promise<CallToolResult> {
+  if (query.length > 10_000) {
+    return {
+      content: [
+        { type: "text", text: "Query too long. Maximum 10,000 characters." },
+      ],
+      isError: true,
+    };
+  }
+
+  try {
+    const db = createClient(env);
+    const results = await recall(env, db, { query, limit });
+
+    if (results.length === 0) {
+      return {
+        content: [{ type: "text", text: "No matching memories found." }],
+      };
+    }
+
+    const text = results
+      .map((r) => {
+        const parts = [`[${r.id}] (${r.type}) ${r.content}`];
+        if (r.similarity !== null)
+          parts.push(`  similarity: ${(r.similarity * 100).toFixed(1)}%`);
+        if (r.topics.length > 0) parts.push(`  topics: ${r.topics.join(", ")}`);
+        if (r.stale) parts.push("  ⚠ stale — consider reviewing");
+        return parts.join("\n");
+      })
+      .join("\n\n");
+
+    return { content: [{ type: "text", text }] };
+  } catch (err) {
+    console.error("recall failed:", err);
+    return {
+      content: [{ type: "text", text: "Search failed. Please try again." }],
+      isError: true,
+    };
+  }
 }

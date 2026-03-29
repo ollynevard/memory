@@ -1,15 +1,25 @@
 import OAuthProvider from "@cloudflare/workers-oauth-provider";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { McpAgent } from "agents/mcp";
-import { z } from "zod";
 import { handleAccessRequest } from "./auth/access-handler";
 import type { Props } from "./auth/types";
-import { createClient } from "./services/db";
-import { browse as browseTool } from "./tools/browse";
-import { forget as forgetTool } from "./tools/forget";
-import { recall as recallTool } from "./tools/recall";
-import { remember as rememberTool } from "./tools/remember";
-import { stats as statsTool } from "./tools/stats";
+import {
+  handler as browseHandler,
+  schema as browseSchema,
+} from "./tools/browse";
+import {
+  handler as forgetHandler,
+  schema as forgetSchema,
+} from "./tools/forget";
+import {
+  handler as recallHandler,
+  schema as recallSchema,
+} from "./tools/recall";
+import {
+  handler as rememberHandler,
+  schema as rememberSchema,
+} from "./tools/remember";
+import { handler as statsHandler } from "./tools/stats";
 
 export interface Env {
   OPENAI_API_KEY: string;
@@ -45,234 +55,36 @@ export class MemoryMCP extends McpAgent<Env, Record<string, never>, Props> {
     this.server.tool(
       "remember",
       "Store a thought. The server handles embedding, metadata extraction, deduplication, and superseding automatically.",
-      {
-        content: z
-          .string()
-          .describe("The thought to remember, in natural language."),
-      },
-      async ({ content }) => {
-        if (content.length > 50_000) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: "Content too long. Maximum 50,000 characters.",
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        try {
-          const db = createClient(this.env);
-          const result = await rememberTool(this.env, db, content);
-
-          const parts = [`Remembered (${result.id}): ${result.type}`];
-          if (result.topics.length > 0)
-            parts.push(`Topics: ${result.topics.join(", ")}`);
-          if (result.people.length > 0)
-            parts.push(`People: ${result.people.join(", ")}`);
-          if (result.action_items.length > 0)
-            parts.push(`Action items: ${result.action_items.join("; ")}`);
-          if (result.superseded)
-            parts.push(
-              `Superseded ${result.superseded.id}: ${result.superseded.reason}`,
-            );
-
-          return { content: [{ type: "text", text: parts.join("\n") }] };
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (msg.includes("too similar")) {
-            return { content: [{ type: "text", text: msg }], isError: true };
-          }
-          console.error("remember failed:", err);
-          return {
-            content: [
-              {
-                type: "text",
-                text: "Failed to store thought. Please try again.",
-              },
-            ],
-            isError: true,
-          };
-        }
-      },
+      rememberSchema,
+      (args) => rememberHandler(this.env, args),
     );
 
     this.server.tool(
       "recall",
       "Search memories by meaning and keyword. Runs hybrid semantic + full-text search and returns ranked results.",
-      {
-        query: z.string().describe("Natural language search query."),
-        limit: z
-          .number()
-          .min(1)
-          .max(50)
-          .default(10)
-          .describe("Maximum results to return."),
-      },
-      async ({ query, limit }) => {
-        if (query.length > 10_000) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: "Query too long. Maximum 10,000 characters.",
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        try {
-          const db = createClient(this.env);
-          const results = await recallTool(this.env, db, { query, limit });
-
-          if (results.length === 0) {
-            return {
-              content: [{ type: "text", text: "No matching memories found." }],
-            };
-          }
-
-          const text = results
-            .map((r) => {
-              const parts = [`[${r.id}] (${r.type}) ${r.content}`];
-              if (r.similarity !== null)
-                parts.push(`  similarity: ${(r.similarity * 100).toFixed(1)}%`);
-              if (r.topics.length > 0)
-                parts.push(`  topics: ${r.topics.join(", ")}`);
-              if (r.stale) parts.push("  ⚠ stale — consider reviewing");
-              return parts.join("\n");
-            })
-            .join("\n\n");
-
-          return { content: [{ type: "text", text }] };
-        } catch (err) {
-          console.error("recall failed:", err);
-          return {
-            content: [
-              { type: "text", text: "Search failed. Please try again." },
-            ],
-            isError: true,
-          };
-        }
-      },
+      recallSchema,
+      (args) => recallHandler(this.env, args),
     );
 
     this.server.tool(
       "browse",
       "List recent thoughts in chronological order.",
-      {
-        limit: z
-          .number()
-          .min(1)
-          .max(100)
-          .default(20)
-          .describe("Maximum results to return."),
-        type: z
-          .string()
-          .optional()
-          .describe("Optional filter by thought type."),
-      },
-      async ({ limit, type }) => {
-        try {
-          const db = createClient(this.env);
-          const results = await browseTool(db, { limit, type });
-
-          if (results.length === 0) {
-            return {
-              content: [{ type: "text", text: "No thoughts stored yet." }],
-            };
-          }
-
-          const text = results
-            .map((r) => {
-              const parts = [`[${r.id}] (${r.type}) ${r.content}`];
-              if (r.topics.length > 0)
-                parts.push(`  topics: ${r.topics.join(", ")}`);
-              parts.push(`  created: ${r.created_at}`);
-              return parts.join("\n");
-            })
-            .join("\n\n");
-
-          return { content: [{ type: "text", text }] };
-        } catch (err) {
-          console.error("browse failed:", err);
-          return {
-            content: [
-              {
-                type: "text",
-                text: "Failed to browse thoughts. Please try again.",
-              },
-            ],
-            isError: true,
-          };
-        }
-      },
+      browseSchema,
+      (args) => browseHandler(this.env, args),
     );
 
     this.server.tool(
       "forget",
       "Soft-delete a thought by ID.",
-      { id: z.string().describe("The thought ID to forget.") },
-      async ({ id }) => {
-        try {
-          const db = createClient(this.env);
-          const deleted = await forgetTool(db, id);
-
-          const text = deleted
-            ? `Forgotten: ${id}`
-            : `No active thought found with ID "${id}".`;
-
-          return { content: [{ type: "text", text }] };
-        } catch (err) {
-          console.error("forget failed:", err);
-          return {
-            content: [
-              {
-                type: "text",
-                text: "Failed to forget thought. Please try again.",
-              },
-            ],
-            isError: true,
-          };
-        }
-      },
+      forgetSchema,
+      (args) => forgetHandler(this.env, args),
     );
 
     this.server.tool(
       "stats",
       "Overview of the memory store — total count, breakdown by type, superseded count, and most recent capture timestamp.",
       {},
-      async () => {
-        try {
-          const db = createClient(this.env);
-          const result = await statsTool(db);
-
-          const parts = [`Total active: ${result.total}`];
-          if (Object.keys(result.byType).length > 0) {
-            const breakdown = Object.entries(result.byType)
-              .map(([t, count]) => `${t}: ${count}`)
-              .join(", ");
-            parts.push(`By type: ${breakdown}`);
-          }
-          parts.push(`Superseded: ${result.superseded}`);
-          parts.push(`Most recent: ${result.mostRecent ?? "none"}`);
-
-          return { content: [{ type: "text", text: parts.join("\n") }] };
-        } catch (err) {
-          console.error("stats failed:", err);
-          return {
-            content: [
-              {
-                type: "text",
-                text: "Failed to retrieve stats. Please try again.",
-              },
-            ],
-            isError: true,
-          };
-        }
-      },
+      () => statsHandler(this.env),
     );
   }
 }
