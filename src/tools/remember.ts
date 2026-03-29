@@ -3,7 +3,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { LIMITS } from "../constants";
 import { DuplicateThoughtError } from "../errors";
-import { createClient, embeddingToJson, generateId } from "../services/db";
+import { embeddingToJson, generateId } from "../services/db";
 import { timed } from "../services/logger";
 import { embed, extractMetadata } from "../services/openai";
 import { checkSupersede } from "../services/supersede";
@@ -102,12 +102,11 @@ export const schema = {
 
 export interface RememberEnv {
   OPENAI_API_KEY: string;
-  TURSO_URL: string;
-  TURSO_AUTH_TOKEN: string;
 }
 
 export async function handler(
   env: RememberEnv,
+  db: Client,
   { content }: { content: string },
 ): Promise<CallToolResult> {
   if (content.length > LIMITS.REMEMBER_CONTENT) {
@@ -120,7 +119,6 @@ export async function handler(
   }
 
   try {
-    const db = createClient(env.TURSO_URL, env.TURSO_AUTH_TOKEN);
     const result = await remember(env.OPENAI_API_KEY, db, content);
 
     const parts = [`Remembered (${result.id}): ${result.type}`];

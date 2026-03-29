@@ -2,12 +2,7 @@ import type { Client } from "@libsql/client/web";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { LIMITS, SIMILARITY, STALENESS_DAYS } from "../constants";
-import {
-  createClient,
-  embeddingToJson,
-  parseThoughtRow,
-  statusClause,
-} from "../services/db";
+import { embeddingToJson, parseThoughtRow, statusClause } from "../services/db";
 import { timed } from "../services/logger";
 import { embed } from "../services/openai";
 
@@ -145,12 +140,11 @@ export const schema = {
 
 export interface RecallEnv {
   OPENAI_API_KEY: string;
-  TURSO_URL: string;
-  TURSO_AUTH_TOKEN: string;
 }
 
 export async function handler(
   env: RecallEnv,
+  db: Client,
   { query, limit }: { query: string; limit: number },
 ): Promise<CallToolResult> {
   if (query.length > LIMITS.RECALL_QUERY) {
@@ -163,7 +157,6 @@ export async function handler(
   }
 
   try {
-    const db = createClient(env.TURSO_URL, env.TURSO_AUTH_TOKEN);
     const results = await recall(env.OPENAI_API_KEY, db, { query, limit });
 
     if (results.length === 0) {
