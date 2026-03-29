@@ -106,7 +106,7 @@ describe("extractMetadata", () => {
     );
 
     await expect(extractMetadata(env, "test")).rejects.toThrow(
-      "OpenAI metadata extraction failed",
+      "OpenAI chat completion failed",
     );
   });
 });
