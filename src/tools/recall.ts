@@ -6,7 +6,7 @@ import {
   createClient,
   embeddingToJson,
   parseThoughtRow,
-  statusFilter,
+  statusClause,
 } from "../services/db";
 import { timed } from "../services/logger";
 import { embed } from "../services/openai";
@@ -51,8 +51,6 @@ export async function recall(
     LIMITS.RECALL_MAX,
   );
   const threshold = options.threshold ?? SIMILARITY.RECALL_DEFAULT;
-  const status = statusFilter(options.includeSuperseded);
-
   // 1. Embed query
   const queryEmbedding = await timed("embed", () =>
     embed(apiKey, options.query),
@@ -66,7 +64,7 @@ export async function recall(
         sql: `SELECT id, content, type, topics, people, created_at,
                 vector_distance_cos(embedding, vector(:embedding)) as distance
               FROM thoughts
-              WHERE ${status}
+              WHERE ${statusClause(undefined, options.includeSuperseded)}
               ORDER BY vector_distance_cos(embedding, vector(:embedding))
               LIMIT :limit`,
         args: { embedding: embeddingJson, limit },
@@ -76,7 +74,7 @@ export async function recall(
                 rank as fts_rank
               FROM thought_fts f
               JOIN thoughts t ON f.rowid = t.rowid
-              WHERE thought_fts MATCH :query AND t.${status}
+              WHERE thought_fts MATCH :query AND ${statusClause("t", options.includeSuperseded)}
               ORDER BY rank
               LIMIT :limit`,
         args: { query: options.query, limit },

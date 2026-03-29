@@ -42,8 +42,12 @@ export function generateId(): string {
 // Helpers
 // ---------------------------------------------------------------------------
 
-export function statusFilter(includeSuperseded?: boolean): string {
-  return includeSuperseded ? "status != 'deleted'" : "status = 'active'";
+export function statusClause(
+  alias?: string,
+  includeSuperseded?: boolean,
+): string {
+  const col = alias ? `${alias}.status` : "status";
+  return includeSuperseded ? `${col} != 'deleted'` : `${col} = 'active'`;
 }
 
 export function embeddingToJson(embedding: number[]): string {
