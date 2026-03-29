@@ -1,6 +1,7 @@
 import type { Client, InStatement } from "@libsql/client/web";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { LIMITS } from "../constants";
 import { DuplicateThoughtError } from "../errors";
 import { createClient, embeddingToJson, generateId } from "../services/db";
 import { timed } from "../services/logger";
@@ -109,7 +110,7 @@ export async function handler(
   env: RememberEnv,
   { content }: { content: string },
 ): Promise<CallToolResult> {
-  if (content.length > 50_000) {
+  if (content.length > LIMITS.REMEMBER_CONTENT) {
     return {
       content: [
         { type: "text", text: "Content too long. Maximum 50,000 characters." },

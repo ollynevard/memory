@@ -1,4 +1,5 @@
 import type { Client } from "@libsql/client/web";
+import { LIMITS, SIMILARITY } from "../constants";
 import { embeddingToJson } from "./db";
 import { chatCompletion } from "./openai";
 
@@ -26,21 +27,19 @@ export async function checkSupersede(
           FROM thoughts
           WHERE status = 'active'
           ORDER BY vector_distance_cos(embedding, vector(:embedding))
-          LIMIT 5`,
-    args: { embedding: embeddingJson },
+          LIMIT :limit`,
+    args: { embedding: embeddingJson, limit: LIMITS.SUPERSEDE_CANDIDATES },
   });
 
   for (const row of similar.rows) {
     const distance = row.distance as number;
     const similarity = 1 - distance;
 
-    // >= 0.95 = duplicate, reject
-    if (similarity >= 0.95) {
+    if (similarity >= SIMILARITY.DUPLICATE) {
       return { isDuplicate: true };
     }
 
-    // 0.85-0.95 = ask LLM if new supersedes old
-    if (similarity >= 0.85) {
+    if (similarity >= SIMILARITY.SUPERSEDE) {
       const prompt = SUPERSEDE_PROMPT.replace(
         "{old_content}",
         row.content as string,
