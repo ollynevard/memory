@@ -1,6 +1,7 @@
 import type { Client, InStatement } from "@libsql/client/web";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { DuplicateThoughtError } from "../errors";
 import type { Env } from "../index";
 import { createClient, embeddingToJson, generateId } from "../services/db";
 import { timed } from "../services/logger";
@@ -33,9 +34,7 @@ export async function remember(
   );
 
   if (supersedeResult.isDuplicate) {
-    throw new Error(
-      "This thought is too similar to an existing memory. Not stored.",
-    );
+    throw new DuplicateThoughtError();
   }
 
   // 3. Build atomic batch of all writes
@@ -132,9 +131,8 @@ export async function handler(
 
     return { content: [{ type: "text", text: parts.join("\n") }] };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("too similar")) {
-      return { content: [{ type: "text", text: msg }], isError: true };
+    if (err instanceof DuplicateThoughtError) {
+      return { content: [{ type: "text", text: err.message }], isError: true };
     }
     console.error("remember failed:", err);
     return {
