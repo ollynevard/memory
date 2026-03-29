@@ -1,6 +1,5 @@
 import type { Client, InStatement } from "@libsql/client/web";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Env } from "../src/index";
 
 // Mock OpenAI services
 vi.mock("../src/services/openai", () => ({
@@ -32,11 +31,7 @@ const mockExtractMetadata = vi.mocked(extractMetadata);
 const mockCheckSupersede = vi.mocked(checkSupersede);
 const mockGenerateId = vi.mocked(generateId);
 
-const TEST_ENV = {
-  OPENAI_API_KEY: "test-key",
-  TURSO_URL: "http://localhost:8080",
-  TURSO_AUTH_TOKEN: "test-token",
-} as unknown as Env;
+const TEST_API_KEY = "test-key";
 
 const FAKE_EMBEDDING = Array.from({ length: 1536 }, () => 0.1);
 
@@ -81,7 +76,11 @@ describe("remember", () => {
   it("stores a thought and returns metadata", async () => {
     const db = mockDb();
 
-    const result = await remember(TEST_ENV, db, "Vitest is great for testing");
+    const result = await remember(
+      TEST_API_KEY,
+      db,
+      "Vitest is great for testing",
+    );
 
     expect(result).toEqual({
       id: "generated-id-abc",
@@ -96,19 +95,22 @@ describe("remember", () => {
   it("calls embed and extractMetadata in parallel", async () => {
     const db = mockDb();
 
-    await remember(TEST_ENV, db, "some thought");
+    await remember(TEST_API_KEY, db, "some thought");
 
-    expect(mockEmbed).toHaveBeenCalledWith(TEST_ENV, "some thought");
-    expect(mockExtractMetadata).toHaveBeenCalledWith(TEST_ENV, "some thought");
+    expect(mockEmbed).toHaveBeenCalledWith(TEST_API_KEY, "some thought");
+    expect(mockExtractMetadata).toHaveBeenCalledWith(
+      TEST_API_KEY,
+      "some thought",
+    );
   });
 
   it("runs dedup check with embedding", async () => {
     const db = mockDb();
 
-    await remember(TEST_ENV, db, "some thought");
+    await remember(TEST_API_KEY, db, "some thought");
 
     expect(mockCheckSupersede).toHaveBeenCalledWith(
-      TEST_ENV,
+      TEST_API_KEY,
       db,
       "some thought",
       FAKE_EMBEDDING,
@@ -119,16 +121,16 @@ describe("remember", () => {
     const db = mockDb();
     mockCheckSupersede.mockResolvedValue({ isDuplicate: true });
 
-    await expect(remember(TEST_ENV, db, "duplicate thought")).rejects.toThrow(
-      "too similar to an existing memory",
-    );
+    await expect(
+      remember(TEST_API_KEY, db, "duplicate thought"),
+    ).rejects.toThrow("too similar to an existing memory");
   });
 
   it("batches insert thought and FTS in a single write", async () => {
     const db = mockDb();
     const batch = vi.mocked(db.batch);
 
-    await remember(TEST_ENV, db, "some thought");
+    await remember(TEST_API_KEY, db, "some thought");
 
     expect(batch).toHaveBeenCalledOnce();
     const [statements, mode] = batch.mock.calls[0];
@@ -174,7 +176,7 @@ describe("remember", () => {
       },
     });
 
-    const result = await remember(TEST_ENV, db, "new thought");
+    const result = await remember(TEST_API_KEY, db, "new thought");
 
     expect(result.superseded).toEqual({
       id: "old123",
@@ -207,7 +209,7 @@ describe("remember", () => {
     const db = mockDb();
     const batch = vi.mocked(db.batch);
 
-    await remember(TEST_ENV, db, "fresh thought");
+    await remember(TEST_API_KEY, db, "fresh thought");
 
     const [statements] = batch.mock.calls[0];
     expect(statements).toHaveLength(2);

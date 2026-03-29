@@ -1,5 +1,3 @@
-import type { Env } from "../index";
-
 async function fetchWithRetry(
   input: RequestInfo,
   init: RequestInit,
@@ -22,13 +20,13 @@ async function fetchWithRetry(
   throw new Error("Unreachable");
 }
 
-export async function embed(env: Env, text: string): Promise<number[]> {
+export async function embed(apiKey: string, text: string): Promise<number[]> {
   const response = await fetchWithRetry(
     "https://api.openai.com/v1/embeddings",
     {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -60,7 +58,7 @@ interface ChatCompletionOptions {
 }
 
 export async function chatCompletion(
-  env: Env,
+  apiKey: string,
   messages: ChatMessage[],
   options: ChatCompletionOptions = {},
 ): Promise<string> {
@@ -71,7 +69,7 @@ export async function chatCompletion(
     {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -109,11 +107,11 @@ const METADATA_PROMPT = `Extract metadata from the following thought. Return JSO
 Only extract what's explicitly present.`;
 
 export async function extractMetadata(
-  env: Env,
+  apiKey: string,
   content: string,
 ): Promise<ThoughtMetadata> {
   const raw = await chatCompletion(
-    env,
+    apiKey,
     [
       { role: "system", content: METADATA_PROMPT },
       { role: "user", content },

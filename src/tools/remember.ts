@@ -2,7 +2,6 @@ import type { Client, InStatement } from "@libsql/client/web";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { DuplicateThoughtError } from "../errors";
-import type { Env } from "../index";
 import { createClient, embeddingToJson, generateId } from "../services/db";
 import { timed } from "../services/logger";
 import { embed, extractMetadata } from "../services/openai";
@@ -18,19 +17,19 @@ export interface RememberResult {
 }
 
 export async function remember(
-  env: Env,
+  apiKey: string,
   db: Client,
   content: string,
 ): Promise<RememberResult> {
   // 1. Fan out parallel OpenAI calls: embedding + metadata extraction
   const [embedding, metadata] = await Promise.all([
-    timed("embed", () => embed(env, content)),
-    timed("extract_metadata", () => extractMetadata(env, content)),
+    timed("embed", () => embed(apiKey, content)),
+    timed("extract_metadata", () => extractMetadata(apiKey, content)),
   ]);
 
   // 2. Dedup + supersede check (read-only)
   const supersedeResult = await timed("check_supersede", () =>
-    checkSupersede(env, db, content, embedding),
+    checkSupersede(apiKey, db, content, embedding),
   );
 
   if (supersedeResult.isDuplicate) {
@@ -100,8 +99,14 @@ export const schema = {
   content: z.string().describe("The thought to remember, in natural language."),
 };
 
+export interface RememberEnv {
+  OPENAI_API_KEY: string;
+  TURSO_URL: string;
+  TURSO_AUTH_TOKEN: string;
+}
+
 export async function handler(
-  env: Env,
+  env: RememberEnv,
   { content }: { content: string },
 ): Promise<CallToolResult> {
   if (content.length > 50_000) {
@@ -114,8 +119,8 @@ export async function handler(
   }
 
   try {
-    const db = createClient(env);
-    const result = await remember(env, db, content);
+    const db = createClient(env.TURSO_URL, env.TURSO_AUTH_TOKEN);
+    const result = await remember(env.OPENAI_API_KEY, db, content);
 
     const parts = [`Remembered (${result.id}): ${result.type}`];
     if (result.topics.length > 0)

@@ -1,16 +1,12 @@
 import type { Client, Row } from "@libsql/client/web";
 import { createClient as createLibsqlClient } from "@libsql/client/web";
-import type { Env } from "../index";
 
 // ---------------------------------------------------------------------------
 // Connection
 // ---------------------------------------------------------------------------
 
-export function createClient(env: Env): Client {
-  return createLibsqlClient({
-    url: env.TURSO_URL,
-    authToken: env.TURSO_AUTH_TOKEN,
-  });
+export function createClient(url: string, authToken: string): Client {
+  return createLibsqlClient({ url, authToken });
 }
 
 // ---------------------------------------------------------------------------
