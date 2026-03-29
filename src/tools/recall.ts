@@ -1,6 +1,7 @@
 import type { Client } from "@libsql/client/web";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { LIMITS, SIMILARITY, STALENESS_DAYS } from "../constants";
 import {
   createClient,
   embeddingToJson,
@@ -29,14 +30,13 @@ export interface RecallResult {
   stale: boolean;
 }
 
-const STALENESS_DAYS: Record<string, number> = {
-  decision: 180,
-  task: 90,
+const STALENESS_BY_TYPE: Record<string, number> = {
+  decision: STALENESS_DAYS.decision,
+  task: STALENESS_DAYS.task,
 };
-const DEFAULT_STALENESS_DAYS = 365;
 
 function isStale(type: string, createdAt: string): boolean {
-  const maxDays = STALENESS_DAYS[type] ?? DEFAULT_STALENESS_DAYS;
+  const maxDays = STALENESS_BY_TYPE[type] ?? STALENESS_DAYS.DEFAULT;
   const age = Date.now() - new Date(createdAt).getTime();
   return age > maxDays * 24 * 60 * 60 * 1000;
 }
@@ -46,8 +46,11 @@ export async function recall(
   db: Client,
   options: RecallOptions,
 ): Promise<RecallResult[]> {
-  const limit = Math.min(Math.max(options.limit ?? 10, 1), 50);
-  const threshold = options.threshold ?? 0.7;
+  const limit = Math.min(
+    Math.max(options.limit ?? LIMITS.RECALL_DEFAULT, 1),
+    LIMITS.RECALL_MAX,
+  );
+  const threshold = options.threshold ?? SIMILARITY.RECALL_DEFAULT;
   const status = statusFilter(options.includeSuperseded);
 
   // 1. Embed query
@@ -137,8 +140,8 @@ export const schema = {
   limit: z
     .number()
     .min(1)
-    .max(50)
-    .default(10)
+    .max(LIMITS.RECALL_MAX)
+    .default(LIMITS.RECALL_DEFAULT)
     .describe("Maximum results to return."),
 };
 
@@ -152,7 +155,7 @@ export async function handler(
   env: RecallEnv,
   { query, limit }: { query: string; limit: number },
 ): Promise<CallToolResult> {
-  if (query.length > 10_000) {
+  if (query.length > LIMITS.RECALL_QUERY) {
     return {
       content: [
         { type: "text", text: "Query too long. Maximum 10,000 characters." },

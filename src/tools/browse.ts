@@ -1,6 +1,7 @@
 import type { Client } from "@libsql/client/web";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { LIMITS } from "../constants";
 import { createClient, parseThoughtRow, statusFilter } from "../services/db";
 
 export interface BrowseOptions {
@@ -22,7 +23,10 @@ export async function browse(
   db: Client,
   options: BrowseOptions,
 ): Promise<BrowseResult[]> {
-  const limit = Math.min(Math.max(options.limit ?? 20, 1), 100);
+  const limit = Math.min(
+    Math.max(options.limit ?? LIMITS.BROWSE_DEFAULT, 1),
+    LIMITS.BROWSE_MAX,
+  );
   const status = statusFilter(options.includeSuperseded);
   const typeClause = options.type ? "AND type = :type" : "";
 
@@ -42,8 +46,8 @@ export const schema = {
   limit: z
     .number()
     .min(1)
-    .max(100)
-    .default(20)
+    .max(LIMITS.BROWSE_MAX)
+    .default(LIMITS.BROWSE_DEFAULT)
     .describe("Maximum results to return."),
   type: z.string().optional().describe("Optional filter by thought type."),
 };
