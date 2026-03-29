@@ -1,6 +1,6 @@
 import type { Env } from "../index";
 
-export async function fetchWithRetry(
+async function fetchWithRetry(
   input: RequestInfo,
   init: RequestInit,
   maxRetries = 3,
@@ -48,6 +48,52 @@ export async function embed(env: Env, text: string): Promise<number[]> {
   return result.data[0].embedding;
 }
 
+interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+interface ChatCompletionOptions {
+  model?: string;
+  temperature?: number;
+  jsonMode?: boolean;
+}
+
+export async function chatCompletion(
+  env: Env,
+  messages: ChatMessage[],
+  options: ChatCompletionOptions = {},
+): Promise<string> {
+  const { model = "gpt-4o-mini", temperature = 0, jsonMode = false } = options;
+
+  const response = await fetchWithRetry(
+    "https://api.openai.com/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature,
+        ...(jsonMode && { response_format: { type: "json_object" } }),
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`OpenAI chat completion failed (${response.status})`);
+  }
+
+  const result = (await response.json()) as {
+    choices: [{ message: { content: string } }];
+  };
+
+  return result.choices[0].message.content;
+}
+
 export interface ThoughtMetadata {
   type: string;
   topics: string[];
@@ -66,45 +112,20 @@ export async function extractMetadata(
   env: Env,
   content: string,
 ): Promise<ThoughtMetadata> {
-  const response = await fetchWithRetry(
-    "https://api.openai.com/v1/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: METADATA_PROMPT },
-          { role: "user", content },
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0,
-      }),
-    },
+  const raw = await chatCompletion(
+    env,
+    [
+      { role: "system", content: METADATA_PROMPT },
+      { role: "user", content },
+    ],
+    { jsonMode: true },
   );
-
-  if (!response.ok) {
-    throw new Error(`OpenAI metadata extraction failed (${response.status})`);
-  }
-
-  const result = (await response.json()) as {
-    choices: [{ message: { content: string } }];
-  };
 
   let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(result.choices[0].message.content) as Record<
-      string,
-      unknown
-    >;
+    parsed = JSON.parse(raw) as Record<string, unknown>;
   } catch {
-    console.error(
-      "Failed to parse metadata response:",
-      result.choices[0].message.content,
-    );
+    console.error("Failed to parse metadata response:", raw);
     return { type: "observation", topics: [], people: [], action_items: [] };
   }
 
