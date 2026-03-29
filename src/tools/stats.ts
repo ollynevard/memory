@@ -1,6 +1,5 @@
 import type { Client } from "@libsql/client/web";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { createClient } from "../services/db";
 
 export interface StatsResult {
   total: number;
@@ -42,14 +41,8 @@ export async function stats(db: Client): Promise<StatsResult> {
   };
 }
 
-export interface StatsEnv {
-  TURSO_URL: string;
-  TURSO_AUTH_TOKEN: string;
-}
-
-export async function handler(env: StatsEnv): Promise<CallToolResult> {
+export async function handler(db: Client): Promise<CallToolResult> {
   try {
-    const db = createClient(env.TURSO_URL, env.TURSO_AUTH_TOKEN);
     const result = await stats(db);
 
     const parts = [`Total active: ${result.total}`];

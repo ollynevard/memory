@@ -1,7 +1,6 @@
 import type { Client } from "@libsql/client/web";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { createClient } from "../services/db";
 
 export async function forget(db: Client, id: string): Promise<boolean> {
   const results = await db.batch(
@@ -27,17 +26,11 @@ export const schema = {
   id: z.string().describe("The thought ID to forget."),
 };
 
-export interface ForgetEnv {
-  TURSO_URL: string;
-  TURSO_AUTH_TOKEN: string;
-}
-
 export async function handler(
-  env: ForgetEnv,
+  db: Client,
   { id }: { id: string },
 ): Promise<CallToolResult> {
   try {
-    const db = createClient(env.TURSO_URL, env.TURSO_AUTH_TOKEN);
     const deleted = await forget(db, id);
 
     const text = deleted

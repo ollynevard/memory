@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client/web";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { LIMITS } from "../constants";
-import { createClient, parseThoughtRow, statusClause } from "../services/db";
+import { parseThoughtRow, statusClause } from "../services/db";
 
 export interface BrowseOptions {
   limit?: number;
@@ -52,17 +52,11 @@ export const schema = {
   type: z.string().optional().describe("Optional filter by thought type."),
 };
 
-export interface BrowseEnv {
-  TURSO_URL: string;
-  TURSO_AUTH_TOKEN: string;
-}
-
 export async function handler(
-  env: BrowseEnv,
+  db: Client,
   { limit, type }: { limit: number; type?: string },
 ): Promise<CallToolResult> {
   try {
-    const db = createClient(env.TURSO_URL, env.TURSO_AUTH_TOKEN);
     const results = await browse(db, { limit, type });
 
     if (results.length === 0) {

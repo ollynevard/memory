@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { McpAgent } from "agents/mcp";
 import { handleAccessRequest } from "./auth/access-handler";
 import type { Props } from "./auth/types";
+import { createClient } from "./services/db";
 import {
   handler as browseHandler,
   schema as browseSchema,
@@ -52,39 +53,41 @@ export class MemoryMCP extends McpAgent<Env, Record<string, never>, Props> {
       }
     }
 
+    const db = createClient(this.env.TURSO_URL, this.env.TURSO_AUTH_TOKEN);
+
     this.server.tool(
       "remember",
       "Store a thought. The server handles embedding, metadata extraction, deduplication, and superseding automatically.",
       rememberSchema,
-      (args) => rememberHandler(this.env, args),
+      (args) => rememberHandler(this.env, db, args),
     );
 
     this.server.tool(
       "recall",
       "Search memories by meaning and keyword. Runs hybrid semantic + full-text search and returns ranked results.",
       recallSchema,
-      (args) => recallHandler(this.env, args),
+      (args) => recallHandler(this.env, db, args),
     );
 
     this.server.tool(
       "browse",
       "List recent thoughts in chronological order.",
       browseSchema,
-      (args) => browseHandler(this.env, args),
+      (args) => browseHandler(db, args),
     );
 
     this.server.tool(
       "forget",
       "Soft-delete a thought by ID.",
       forgetSchema,
-      (args) => forgetHandler(this.env, args),
+      (args) => forgetHandler(db, args),
     );
 
     this.server.tool(
       "stats",
       "Overview of the memory store — total count, breakdown by type, superseded count, and most recent capture timestamp.",
       {},
-      () => statsHandler(this.env),
+      () => statsHandler(db),
     );
   }
 }
