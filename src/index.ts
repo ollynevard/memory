@@ -4,6 +4,7 @@ import { McpAgent } from "agents/mcp";
 import { handleAccessRequest } from "./auth/access-handler";
 import type { Props } from "./auth/types";
 import { createClient } from "./services/db";
+import { createOpenAIChatModel, createOpenAIEmbedder } from "./services/openai";
 import {
   handler as browseHandler,
   schema as browseSchema,
@@ -54,19 +55,21 @@ export class MemoryMCP extends McpAgent<Env, Record<string, never>, Props> {
     }
 
     const db = createClient(this.env.TURSO_URL, this.env.TURSO_AUTH_TOKEN);
+    const embedder = createOpenAIEmbedder(this.env.OPENAI_API_KEY);
+    const chat = createOpenAIChatModel(this.env.OPENAI_API_KEY);
 
     this.server.tool(
       "remember",
       "Store a thought. The server handles embedding, metadata extraction, deduplication, and superseding automatically.",
       rememberSchema,
-      (args) => rememberHandler(this.env, db, args),
+      (args) => rememberHandler({ embedder, chat }, db, args),
     );
 
     this.server.tool(
       "recall",
       "Search memories by meaning and keyword. Runs hybrid semantic + full-text search and returns ranked results.",
       recallSchema,
-      (args) => recallHandler(this.env, db, args),
+      (args) => recallHandler({ embedder }, db, args),
     );
 
     this.server.tool(

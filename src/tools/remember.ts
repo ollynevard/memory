@@ -4,8 +4,9 @@ import { z } from "zod";
 import { LIMITS } from "../constants";
 import { DuplicateThoughtError } from "../errors";
 import { embeddingToJson, generateId } from "../services/db";
+import type { ChatModel, Embedder } from "../services/llm";
 import { timed } from "../services/logger";
-import { embed, extractMetadata } from "../services/openai";
+import { extractMetadata } from "../services/openai";
 import { checkSupersede } from "../services/supersede";
 
 export interface RememberResult {
@@ -18,19 +19,20 @@ export interface RememberResult {
 }
 
 export async function remember(
-  apiKey: string,
+  embedder: Embedder,
+  chat: ChatModel,
   db: Client,
   content: string,
 ): Promise<RememberResult> {
-  // 1. Fan out parallel OpenAI calls: embedding + metadata extraction
+  // 1. Fan out parallel LLM calls: embedding + metadata extraction
   const [embedding, metadata] = await Promise.all([
-    timed("embed", () => embed(apiKey, content)),
-    timed("extract_metadata", () => extractMetadata(apiKey, content)),
+    timed("embed", () => embedder.embed(content)),
+    timed("extract_metadata", () => extractMetadata(chat, content)),
   ]);
 
   // 2. Dedup + supersede check (read-only)
   const supersedeResult = await timed("check_supersede", () =>
-    checkSupersede(apiKey, db, content, embedding),
+    checkSupersede(chat, db, content, embedding),
   );
 
   if (supersedeResult.isDuplicate) {
@@ -100,12 +102,13 @@ export const schema = {
   content: z.string().describe("The thought to remember, in natural language."),
 };
 
-export interface RememberEnv {
-  OPENAI_API_KEY: string;
+export interface RememberDeps {
+  embedder: Embedder;
+  chat: ChatModel;
 }
 
 export async function handler(
-  env: RememberEnv,
+  deps: RememberDeps,
   db: Client,
   { content }: { content: string },
 ): Promise<CallToolResult> {
@@ -119,7 +122,7 @@ export async function handler(
   }
 
   try {
-    const result = await remember(env.OPENAI_API_KEY, db, content);
+    const result = await remember(deps.embedder, deps.chat, db, content);
 
     const parts = [`Remembered (${result.id}): ${result.type}`];
     if (result.topics.length > 0)

@@ -1,75 +1,73 @@
 import { fetchWithRetry } from "./http";
+import type { ChatModel, Embedder } from "./llm";
 
-export async function embed(apiKey: string, text: string): Promise<number[]> {
-  const response = await fetchWithRetry(
-    "https://api.openai.com/v1/embeddings",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "text-embedding-3-small",
-        input: text,
-      }),
+export function createOpenAIEmbedder(apiKey: string): Embedder {
+  return {
+    async embed(text: string): Promise<number[]> {
+      const response = await fetchWithRetry(
+        "https://api.openai.com/v1/embeddings",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "text-embedding-3-small",
+            input: text,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(`OpenAI embedding failed (${response.status})`);
+      }
+
+      const result = (await response.json()) as {
+        data: [{ embedding: number[] }];
+      };
+      return result.data[0].embedding;
     },
-  );
-
-  if (!response.ok) {
-    throw new Error(`OpenAI embedding failed (${response.status})`);
-  }
-
-  const result = (await response.json()) as {
-    data: [{ embedding: number[] }];
   };
-  return result.data[0].embedding;
 }
 
-interface ChatMessage {
-  role: "system" | "user" | "assistant";
-  content: string;
-}
+export function createOpenAIChatModel(apiKey: string): ChatModel {
+  return {
+    async complete(messages, options = {}): Promise<string> {
+      const {
+        model = "gpt-4o-mini",
+        temperature = 0,
+        jsonMode = false,
+      } = options;
 
-interface ChatCompletionOptions {
-  model?: string;
-  temperature?: number;
-  jsonMode?: boolean;
-}
+      const response = await fetchWithRetry(
+        "https://api.openai.com/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            messages,
+            temperature,
+            ...(jsonMode && { response_format: { type: "json_object" } }),
+          }),
+        },
+      );
 
-export async function chatCompletion(
-  apiKey: string,
-  messages: ChatMessage[],
-  options: ChatCompletionOptions = {},
-): Promise<string> {
-  const { model = "gpt-4o-mini", temperature = 0, jsonMode = false } = options;
+      if (!response.ok) {
+        throw new Error(`OpenAI chat completion failed (${response.status})`);
+      }
 
-  const response = await fetchWithRetry(
-    "https://api.openai.com/v1/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature,
-        ...(jsonMode && { response_format: { type: "json_object" } }),
-      }),
+      const result = (await response.json()) as {
+        choices: [{ message: { content: string } }];
+      };
+
+      return result.choices[0].message.content;
     },
-  );
-
-  if (!response.ok) {
-    throw new Error(`OpenAI chat completion failed (${response.status})`);
-  }
-
-  const result = (await response.json()) as {
-    choices: [{ message: { content: string } }];
   };
-
-  return result.choices[0].message.content;
 }
 
 export interface ThoughtMetadata {
@@ -87,11 +85,10 @@ const METADATA_PROMPT = `Extract metadata from the following thought. Return JSO
 Only extract what's explicitly present.`;
 
 export async function extractMetadata(
-  apiKey: string,
+  chat: ChatModel,
   content: string,
 ): Promise<ThoughtMetadata> {
-  const raw = await chatCompletion(
-    apiKey,
+  const raw = await chat.complete(
     [
       { role: "system", content: METADATA_PROMPT },
       { role: "user", content },
