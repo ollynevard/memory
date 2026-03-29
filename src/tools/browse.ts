@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client/web";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { LIMITS } from "../constants";
-import { createClient, parseThoughtRow, statusFilter } from "../services/db";
+import { createClient, parseThoughtRow, statusClause } from "../services/db";
 
 export interface BrowseOptions {
   limit?: number;
@@ -27,7 +27,7 @@ export async function browse(
     Math.max(options.limit ?? LIMITS.BROWSE_DEFAULT, 1),
     LIMITS.BROWSE_MAX,
   );
-  const status = statusFilter(options.includeSuperseded);
+  const status = statusClause(undefined, options.includeSuperseded);
   const typeClause = options.type ? "AND type = :type" : "";
 
   const result = await db.execute({
