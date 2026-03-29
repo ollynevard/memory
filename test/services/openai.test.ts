@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ChatModel } from "../../src/services/llm";
 import {
   createOpenAIChatModel,
   createOpenAIEmbedder,
