@@ -3,8 +3,8 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { LIMITS, SIMILARITY, STALENESS_DAYS } from "../constants";
 import { embeddingToJson, parseThoughtRow, statusClause } from "../services/db";
+import type { Embedder } from "../services/llm";
 import { timed } from "../services/logger";
-import { embed } from "../services/openai";
 
 export interface RecallOptions {
   query: string;
@@ -37,7 +37,7 @@ function isStale(type: string, createdAt: string): boolean {
 }
 
 export async function recall(
-  apiKey: string,
+  embedder: Embedder,
   db: Client,
   options: RecallOptions,
 ): Promise<RecallResult[]> {
@@ -48,7 +48,7 @@ export async function recall(
   const threshold = options.threshold ?? SIMILARITY.RECALL_DEFAULT;
   // 1. Embed query
   const queryEmbedding = await timed("embed", () =>
-    embed(apiKey, options.query),
+    embedder.embed(options.query),
   );
   const embeddingJson = embeddingToJson(queryEmbedding);
 
@@ -138,12 +138,12 @@ export const schema = {
     .describe("Maximum results to return."),
 };
 
-export interface RecallEnv {
-  OPENAI_API_KEY: string;
+export interface RecallDeps {
+  embedder: Embedder;
 }
 
 export async function handler(
-  env: RecallEnv,
+  deps: RecallDeps,
   db: Client,
   { query, limit }: { query: string; limit: number },
 ): Promise<CallToolResult> {
@@ -157,7 +157,7 @@ export async function handler(
   }
 
   try {
-    const results = await recall(env.OPENAI_API_KEY, db, { query, limit });
+    const results = await recall(deps.embedder, db, { query, limit });
 
     if (results.length === 0) {
       return {

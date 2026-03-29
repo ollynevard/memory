@@ -1,9 +1,9 @@
 import type { Client, InStatement } from "@libsql/client/web";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ChatModel, Embedder } from "../src/services/llm";
 
-// Mock OpenAI services
+// Mock extractMetadata (still in openai.ts but now takes ChatModel)
 vi.mock("../src/services/openai", () => ({
-  embed: vi.fn(),
   extractMetadata: vi.fn(),
 }));
 
@@ -22,18 +22,25 @@ vi.mock("../src/services/db", async (importOriginal) => {
 });
 
 import { generateId } from "../src/services/db";
-import { embed, extractMetadata } from "../src/services/openai";
+import { extractMetadata } from "../src/services/openai";
 import { checkSupersede } from "../src/services/supersede";
 import { remember } from "../src/tools/remember";
 
-const mockEmbed = vi.mocked(embed);
 const mockExtractMetadata = vi.mocked(extractMetadata);
 const mockCheckSupersede = vi.mocked(checkSupersede);
 const mockGenerateId = vi.mocked(generateId);
 
-const TEST_API_KEY = "test-key";
-
 const FAKE_EMBEDDING = Array.from({ length: 1536 }, () => 0.1);
+
+const mockEmbedder: Embedder = {
+  embed: vi
+    .fn<(text: string) => Promise<number[]>>()
+    .mockResolvedValue(FAKE_EMBEDDING),
+};
+
+const mockChat: ChatModel = {
+  complete: vi.fn().mockResolvedValue("{}"),
+};
 
 function mockDb(overrides: Partial<Client> = {}): Client {
   return {
@@ -62,7 +69,7 @@ describe("remember", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    mockEmbed.mockResolvedValue(FAKE_EMBEDDING);
+    vi.mocked(mockEmbedder.embed).mockResolvedValue(FAKE_EMBEDDING);
     mockExtractMetadata.mockResolvedValue({
       type: "observation",
       topics: ["testing"],
@@ -77,7 +84,8 @@ describe("remember", () => {
     const db = mockDb();
 
     const result = await remember(
-      TEST_API_KEY,
+      mockEmbedder,
+      mockChat,
       db,
       "Vitest is great for testing",
     );
@@ -92,25 +100,22 @@ describe("remember", () => {
     });
   });
 
-  it("calls embed and extractMetadata in parallel", async () => {
+  it("calls embedder and extractMetadata in parallel", async () => {
     const db = mockDb();
 
-    await remember(TEST_API_KEY, db, "some thought");
+    await remember(mockEmbedder, mockChat, db, "some thought");
 
-    expect(mockEmbed).toHaveBeenCalledWith(TEST_API_KEY, "some thought");
-    expect(mockExtractMetadata).toHaveBeenCalledWith(
-      TEST_API_KEY,
-      "some thought",
-    );
+    expect(mockEmbedder.embed).toHaveBeenCalledWith("some thought");
+    expect(mockExtractMetadata).toHaveBeenCalledWith(mockChat, "some thought");
   });
 
   it("runs dedup check with embedding", async () => {
     const db = mockDb();
 
-    await remember(TEST_API_KEY, db, "some thought");
+    await remember(mockEmbedder, mockChat, db, "some thought");
 
     expect(mockCheckSupersede).toHaveBeenCalledWith(
-      TEST_API_KEY,
+      mockChat,
       db,
       "some thought",
       FAKE_EMBEDDING,
@@ -122,7 +127,7 @@ describe("remember", () => {
     mockCheckSupersede.mockResolvedValue({ isDuplicate: true });
 
     await expect(
-      remember(TEST_API_KEY, db, "duplicate thought"),
+      remember(mockEmbedder, mockChat, db, "duplicate thought"),
     ).rejects.toThrow("too similar to an existing memory");
   });
 
@@ -130,7 +135,7 @@ describe("remember", () => {
     const db = mockDb();
     const batch = vi.mocked(db.batch);
 
-    await remember(TEST_API_KEY, db, "some thought");
+    await remember(mockEmbedder, mockChat, db, "some thought");
 
     expect(batch).toHaveBeenCalledOnce();
     const [statements, mode] = batch.mock.calls[0];
@@ -176,7 +181,7 @@ describe("remember", () => {
       },
     });
 
-    const result = await remember(TEST_API_KEY, db, "new thought");
+    const result = await remember(mockEmbedder, mockChat, db, "new thought");
 
     expect(result.superseded).toEqual({
       id: "old123",
@@ -209,7 +214,7 @@ describe("remember", () => {
     const db = mockDb();
     const batch = vi.mocked(db.batch);
 
-    await remember(TEST_API_KEY, db, "fresh thought");
+    await remember(mockEmbedder, mockChat, db, "fresh thought");
 
     const [statements] = batch.mock.calls[0];
     expect(statements).toHaveLength(2);

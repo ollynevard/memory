@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { embed, extractMetadata } from "../../src/services/openai";
+import {
+  createOpenAIChatModel,
+  createOpenAIEmbedder,
+  extractMetadata,
+} from "../../src/services/openai";
 
 const apiKey = "test-key";
 
@@ -22,12 +26,13 @@ function mockFetchResponse(body: unknown, ok = true) {
   );
 }
 
-describe("embed", () => {
+describe("createOpenAIEmbedder", () => {
   it("returns a 1536-dimensional embedding", async () => {
     const embedding = Array.from({ length: 1536 }, () => 0.1);
     mockFetchResponse({ data: [{ embedding }] });
 
-    const result = await embed(apiKey, "test thought");
+    const embedder = createOpenAIEmbedder(apiKey);
+    const result = await embedder.embed("test thought");
 
     expect(result).toHaveLength(1536);
     expect(result[0]).toBe(0.1);
@@ -36,7 +41,8 @@ describe("embed", () => {
   it("calls the correct OpenAI endpoint", async () => {
     mockFetchResponse({ data: [{ embedding: [0.1] }] });
 
-    await embed(apiKey, "test thought");
+    const embedder = createOpenAIEmbedder(apiKey);
+    await embedder.embed("test thought");
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "https://api.openai.com/v1/embeddings",
@@ -54,7 +60,8 @@ describe("embed", () => {
       new Response("Bad Request", { status: 400 }),
     );
 
-    await expect(embed(apiKey, "test")).rejects.toThrow(
+    const embedder = createOpenAIEmbedder(apiKey);
+    await expect(embedder.embed("test")).rejects.toThrow(
       "OpenAI embedding failed",
     );
   });
@@ -77,8 +84,9 @@ describe("extractMetadata", () => {
       ],
     });
 
+    const chat = createOpenAIChatModel(apiKey);
     const result = await extractMetadata(
-      apiKey,
+      chat,
       "Sarah suggested we use Postgres for the new project",
     );
 
@@ -93,7 +101,8 @@ describe("extractMetadata", () => {
       choices: [{ message: { content: JSON.stringify({}) } }],
     });
 
-    const result = await extractMetadata(apiKey, "some thought");
+    const chat = createOpenAIChatModel(apiKey);
+    const result = await extractMetadata(chat, "some thought");
 
     expect(result.type).toBe("observation");
     expect(result.topics).toEqual([]);
@@ -106,7 +115,8 @@ describe("extractMetadata", () => {
       new Response("Bad Request", { status: 400 }),
     );
 
-    await expect(extractMetadata(apiKey, "test")).rejects.toThrow(
+    const chat = createOpenAIChatModel(apiKey);
+    await expect(extractMetadata(chat, "test")).rejects.toThrow(
       "OpenAI chat completion failed",
     );
   });
