@@ -20,7 +20,7 @@ export interface RecallResult {
   topics: string[];
   people: string[];
   similarity: number | null;
-  created_at: string;
+  createdAt: string;
   stale: boolean;
 }
 
@@ -72,9 +72,9 @@ export async function recall(
       type: row.type,
       topics: row.topics,
       people: row.people,
-      created_at: row.created_at,
+      createdAt: row.createdAt,
       similarity,
-      stale: isStale(row.type, row.created_at),
+      stale: isStale(row.type, row.createdAt),
     });
   }
 
@@ -84,7 +84,7 @@ export async function recall(
     seen.set(row.id, {
       ...row,
       similarity: null,
-      stale: isStale(row.type, row.created_at),
+      stale: isStale(row.type, row.createdAt),
     });
   }
 

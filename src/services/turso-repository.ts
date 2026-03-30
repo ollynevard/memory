@@ -1,7 +1,7 @@
 import type { Client, InStatement, Row } from "@libsql/client/web";
 import type {
   InsertThought,
-  SimilarRow,
+  SimilarThought,
   StatsResult,
   Thought,
   ThoughtRepository,
@@ -27,14 +27,14 @@ function safeParseArray(value: unknown): string[] {
   }
 }
 
-function parseThoughtRow(row: Row): Thought {
+function parseThought(row: Row): Thought {
   return {
     id: row.id as string,
     content: row.content as string,
     type: row.type as string,
     topics: safeParseArray(row.topics),
     people: safeParseArray(row.people),
-    created_at: row.created_at as string,
+    createdAt: row.created_at as string,
   };
 }
 
@@ -104,7 +104,7 @@ export class TursoThoughtRepository implements ThoughtRepository {
     });
 
     return result.rows.map((row) => ({
-      ...parseThoughtRow(row),
+      ...parseThought(row),
       distance: row.distance as number,
     }));
   }
@@ -123,13 +123,13 @@ export class TursoThoughtRepository implements ThoughtRepository {
       args: { query, limit: options.limit },
     });
 
-    return result.rows.map(parseThoughtRow);
+    return result.rows.map(parseThought);
   }
 
   async findSimilarActive(
     embedding: number[],
     limit: number,
-  ): Promise<SimilarRow[]> {
+  ): Promise<SimilarThought[]> {
     const embeddingJson = embeddingToJson(embedding);
     const result = await this.db.execute({
       sql: `SELECT id, content, vector_distance_cos(embedding, vector(:embedding)) as distance
@@ -167,7 +167,7 @@ export class TursoThoughtRepository implements ThoughtRepository {
       },
     });
 
-    return result.rows.map(parseThoughtRow);
+    return result.rows.map(parseThought);
   }
 
   async softDelete(id: string): Promise<boolean> {

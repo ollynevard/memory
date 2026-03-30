@@ -24,7 +24,7 @@ function makeVectorResult(
     type: "observation",
     topics: ["testing"],
     people: [],
-    created_at: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
     distance: 0.1,
     ...overrides,
   };
@@ -37,7 +37,7 @@ function makeFtsResult(overrides: Partial<Thought> = {}): Thought {
     type: "observation",
     topics: ["testing"],
     people: [],
-    created_at: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
     ...overrides,
   };
 }
@@ -164,7 +164,7 @@ describe("recall", () => {
       makeVectorResult({
         id: "old",
         type: "decision",
-        created_at: old.toISOString(),
+        createdAt: old.toISOString(),
         distance: 0.1,
       }),
     ]);
@@ -178,7 +178,7 @@ describe("recall", () => {
     const repo = mockRepo([
       makeVectorResult({
         type: "decision",
-        created_at: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
         distance: 0.1,
       }),
     ]);
