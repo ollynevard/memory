@@ -1,6 +1,7 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { ThoughtRepository } from "../repository";
+import { mcpHandler } from "./handler";
 
 export async function forget(
   repo: ThoughtRepository,
@@ -17,7 +18,7 @@ export async function handler(
   repo: ThoughtRepository,
   { id }: { id: string },
 ): Promise<CallToolResult> {
-  try {
+  return mcpHandler("forget thought", async () => {
     const deleted = await forget(repo, id);
 
     const text = deleted
@@ -25,13 +26,5 @@ export async function handler(
       : `No active thought found with ID "${id}".`;
 
     return { content: [{ type: "text", text }] };
-  } catch (err) {
-    console.error("forget failed:", err);
-    return {
-      content: [
-        { type: "text", text: "Failed to forget thought. Please try again." },
-      ],
-      isError: true,
-    };
-  }
+  });
 }

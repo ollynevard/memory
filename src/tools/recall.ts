@@ -4,6 +4,7 @@ import { LIMITS, SIMILARITY, STALENESS_DAYS } from "../constants";
 import type { ThoughtRepository } from "../repository";
 import type { Embedder } from "../services/llm";
 import { timed } from "../services/logger";
+import { mcpHandler } from "./handler";
 
 export interface RecallOptions {
   query: string;
@@ -135,7 +136,7 @@ export async function handler(
     };
   }
 
-  try {
+  return mcpHandler("search", async () => {
     const results = await recall(embedder, repo, { query, limit });
 
     if (results.length === 0) {
@@ -156,11 +157,5 @@ export async function handler(
       .join("\n\n");
 
     return { content: [{ type: "text", text }] };
-  } catch (err) {
-    console.error("recall failed:", err);
-    return {
-      content: [{ type: "text", text: "Search failed. Please try again." }],
-      isError: true,
-    };
-  }
+  });
 }

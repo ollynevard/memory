@@ -1,5 +1,6 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { StatsResult, ThoughtRepository } from "../repository";
+import { mcpHandler } from "./handler";
 
 export type { StatsResult };
 
@@ -10,7 +11,7 @@ export async function stats(repo: ThoughtRepository): Promise<StatsResult> {
 export async function handler(
   repo: ThoughtRepository,
 ): Promise<CallToolResult> {
-  try {
+  return mcpHandler("retrieve stats", async () => {
     const result = await stats(repo);
 
     const parts = [`Total active: ${result.total}`];
@@ -24,13 +25,5 @@ export async function handler(
     parts.push(`Most recent: ${result.mostRecent ?? "none"}`);
 
     return { content: [{ type: "text", text: parts.join("\n") }] };
-  } catch (err) {
-    console.error("stats failed:", err);
-    return {
-      content: [
-        { type: "text", text: "Failed to retrieve stats. Please try again." },
-      ],
-      isError: true,
-    };
-  }
+  });
 }

@@ -8,6 +8,7 @@ import type { ChatModel, Embedder } from "../services/llm";
 import { timed } from "../services/logger";
 import { extractMetadata } from "../services/metadata";
 import { checkSupersede } from "../services/supersede";
+import { mcpHandler } from "./handler";
 
 export interface RememberResult {
   id: string;
@@ -91,8 +92,19 @@ export async function handler(
     };
   }
 
-  try {
-    const result = await remember(embedder, chat, repo, content);
+  return mcpHandler("store thought", async () => {
+    let result: RememberResult;
+    try {
+      result = await remember(embedder, chat, repo, content);
+    } catch (err) {
+      if (err instanceof DuplicateThoughtError) {
+        return {
+          content: [{ type: "text", text: err.message }],
+          isError: true,
+        };
+      }
+      throw err;
+    }
 
     const parts = [`Remembered (${result.id}): ${result.type}`];
     if (result.topics.length > 0)
@@ -107,16 +119,5 @@ export async function handler(
       );
 
     return { content: [{ type: "text", text: parts.join("\n") }] };
-  } catch (err) {
-    if (err instanceof DuplicateThoughtError) {
-      return { content: [{ type: "text", text: err.message }], isError: true };
-    }
-    console.error("remember failed:", err);
-    return {
-      content: [
-        { type: "text", text: "Failed to store thought. Please try again." },
-      ],
-      isError: true,
-    };
-  }
+  });
 }

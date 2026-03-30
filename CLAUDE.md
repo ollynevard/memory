@@ -27,6 +27,7 @@ memory/
 │   │   ├── state.ts          ← OAuth state management (KV)
 │   │   └── types.ts          ← Auth prop types
 │   ├── tools/
+│   │   ├── handler.ts          ← mcpHandler wrapper (error logging + formatting)
 │   │   ├── remember.ts
 │   │   ├── recall.ts
 │   │   ├── browse.ts
