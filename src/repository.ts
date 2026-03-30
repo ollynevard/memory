@@ -1,7 +1,19 @@
+export const THOUGHT_TYPES = [
+  "observation",
+  "decision",
+  "idea",
+  "task",
+  "reference",
+  "person_note",
+  "question",
+] as const;
+
+export type ThoughtType = (typeof THOUGHT_TYPES)[number];
+
 export interface Thought {
   id: string;
   content: string;
-  type: string;
+  type: ThoughtType;
   topics: string[];
   people: string[];
   createdAt: string;
@@ -21,7 +33,7 @@ export interface InsertThought {
   id: string;
   content: string;
   embedding: number[];
-  type: string;
+  type: ThoughtType;
   topics: string[];
   people: string[];
   action_items: string[];
@@ -65,7 +77,7 @@ export interface ThoughtRepository {
   /** Lists recent thoughts in reverse chronological order, with optional type filtering. */
   browse(options: {
     limit: number;
-    type?: string;
+    type?: ThoughtType;
     includeSuperseded?: boolean;
   }): Promise<Thought[]>;
 

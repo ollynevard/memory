@@ -1,12 +1,17 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { LIMITS } from "../constants";
-import type { Thought, ThoughtRepository } from "../repository";
+import {
+  THOUGHT_TYPES,
+  type Thought,
+  type ThoughtRepository,
+  type ThoughtType,
+} from "../repository";
 import { mcpHandler } from "./handler";
 
 export interface BrowseOptions {
   limit?: number;
-  type?: string;
+  type?: ThoughtType;
   includeSuperseded?: boolean;
 }
 
@@ -33,12 +38,15 @@ export const schema = {
     .max(LIMITS.BROWSE_MAX)
     .default(LIMITS.BROWSE_DEFAULT)
     .describe("Maximum results to return."),
-  type: z.string().optional().describe("Optional filter by thought type."),
+  type: z
+    .enum(THOUGHT_TYPES)
+    .optional()
+    .describe("Optional filter by thought type."),
 };
 
 export async function handler(
   repo: ThoughtRepository,
-  { limit, type }: { limit: number; type?: string },
+  { limit, type }: { limit: number; type?: ThoughtType },
 ): Promise<CallToolResult> {
   return mcpHandler("browse thoughts", async () => {
     const results = await browse(repo, { limit, type });

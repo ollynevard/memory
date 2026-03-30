@@ -1,14 +1,15 @@
+import { THOUGHT_TYPES, type ThoughtType } from "../repository";
 import type { ChatModel } from "./llm";
 
 export interface ThoughtMetadata {
-  type: string;
+  type: ThoughtType;
   topics: string[];
   people: string[];
   action_items: string[];
 }
 
 const METADATA_PROMPT = `Extract metadata from the following thought. Return JSON only, no markdown:
-- "type": one of "observation", "decision", "idea", "task", "reference", "person_note", "question"
+- "type": one of ${THOUGHT_TYPES.map((t) => `"${t}"`).join(", ")}
 - "topics": array of 1-4 short topic tags
 - "people": array of people mentioned (empty if none)
 - "action_items": array of implied to-dos (empty if none)
@@ -34,8 +35,12 @@ export async function extractMetadata(
     return { type: "observation", topics: [], people: [], action_items: [] };
   }
 
+  const typeSet: ReadonlySet<string> = new Set(THOUGHT_TYPES);
+
   return {
-    type: typeof parsed.type === "string" ? parsed.type : "observation",
+    type: (typeof parsed.type === "string" && typeSet.has(parsed.type)
+      ? parsed.type
+      : "observation") as ThoughtType,
     topics: Array.isArray(parsed.topics) ? parsed.topics : [],
     people: Array.isArray(parsed.people) ? parsed.people : [],
     action_items: Array.isArray(parsed.action_items) ? parsed.action_items : [],

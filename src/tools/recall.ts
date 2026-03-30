@@ -1,7 +1,7 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { LIMITS, SIMILARITY, STALENESS_DAYS } from "../constants";
-import type { ThoughtRepository } from "../repository";
+import type { ThoughtRepository, ThoughtType } from "../repository";
 import type { Embedder } from "../services/llm";
 import { timed } from "../services/logger";
 import { mcpHandler } from "./handler";
@@ -11,13 +11,13 @@ export interface RecallOptions {
   limit?: number;
   threshold?: number;
   includeSuperseded?: boolean;
-  filter?: { type?: string; topics?: string[] };
+  filter?: { type?: ThoughtType; topics?: string[] };
 }
 
 export interface RecallResult {
   id: string;
   content: string;
-  type: string;
+  type: ThoughtType;
   topics: string[];
   people: string[];
   similarity: number | null;
@@ -25,12 +25,12 @@ export interface RecallResult {
   stale: boolean;
 }
 
-const STALENESS_BY_TYPE: Record<string, number> = {
+const STALENESS_BY_TYPE: Partial<Record<ThoughtType, number>> = {
   decision: STALENESS_DAYS.decision,
   task: STALENESS_DAYS.task,
 };
 
-function isStale(type: string, createdAt: string): boolean {
+function isStale(type: ThoughtType, createdAt: string): boolean {
   const maxDays = STALENESS_BY_TYPE[type] ?? STALENESS_DAYS.DEFAULT;
   const age = Date.now() - new Date(createdAt).getTime();
   return age > maxDays * 24 * 60 * 60 * 1000;

@@ -2,7 +2,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { LIMITS } from "../constants";
 import { DuplicateThoughtError } from "../errors";
-import type { ThoughtRepository } from "../repository";
+import type { ThoughtRepository, ThoughtType } from "../repository";
 import { generateId } from "../services/db";
 import type { ChatModel, Embedder } from "../services/llm";
 import { timed } from "../services/logger";
@@ -12,7 +12,7 @@ import { mcpHandler } from "./handler";
 
 export interface RememberResult {
   id: string;
-  type: string;
+  type: ThoughtType;
   topics: string[];
   people: string[];
   action_items: string[];

@@ -5,6 +5,7 @@ import type {
   StatsResult,
   Thought,
   ThoughtRepository,
+  ThoughtType,
   VectorSearchResult,
 } from "../repository";
 
@@ -31,7 +32,7 @@ function parseThought(row: Row): Thought {
   return {
     id: row.id as string,
     content: row.content as string,
-    type: row.type as string,
+    type: row.type as ThoughtType,
     topics: safeParseArray(row.topics),
     people: safeParseArray(row.people),
     createdAt: row.created_at as string,
@@ -149,7 +150,7 @@ export class TursoThoughtRepository implements ThoughtRepository {
 
   async browse(options: {
     limit: number;
-    type?: string;
+    type?: ThoughtType;
     includeSuperseded?: boolean;
   }): Promise<Thought[]> {
     const status = statusClause(undefined, options.includeSuperseded);
