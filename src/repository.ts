@@ -1,4 +1,4 @@
-export interface ThoughtRow {
+export interface Thought {
   id: string;
   content: string;
   type: string;
@@ -7,7 +7,7 @@ export interface ThoughtRow {
   created_at: string;
 }
 
-export interface VectorSearchResult extends ThoughtRow {
+export interface VectorSearchResult extends Thought {
   distance: number;
 }
 
@@ -54,7 +54,7 @@ export interface ThoughtRepository {
   ftsSearch(
     query: string,
     options: { limit: number; includeSuperseded?: boolean },
-  ): Promise<ThoughtRow[]>;
+  ): Promise<Thought[]>;
 
   /** Vector search restricted to active thoughts only. Used for duplicate/supersede detection. */
   findSimilarActive(embedding: number[], limit: number): Promise<SimilarRow[]>;
@@ -64,7 +64,7 @@ export interface ThoughtRepository {
     limit: number;
     type?: string;
     includeSuperseded?: boolean;
-  }): Promise<ThoughtRow[]>;
+  }): Promise<Thought[]>;
 
   /** Soft-deletes by setting status and cleaning up FTS. Returns false if the thought was already deleted or not found. */
   softDelete(id: string): Promise<boolean>;

@@ -1,7 +1,7 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { LIMITS } from "../constants";
-import type { ThoughtRepository, ThoughtRow } from "../repository";
+import type { Thought, ThoughtRepository } from "../repository";
 
 export interface BrowseOptions {
   limit?: number;
@@ -9,7 +9,7 @@ export interface BrowseOptions {
   includeSuperseded?: boolean;
 }
 
-export type BrowseResult = ThoughtRow;
+export type BrowseResult = Thought;
 
 export async function browse(
   repo: ThoughtRepository,

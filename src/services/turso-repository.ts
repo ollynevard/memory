@@ -3,8 +3,8 @@ import type {
   InsertThought,
   SimilarRow,
   StatsResult,
+  Thought,
   ThoughtRepository,
-  ThoughtRow,
   VectorSearchResult,
 } from "../repository";
 
@@ -27,7 +27,7 @@ function safeParseArray(value: unknown): string[] {
   }
 }
 
-function parseThoughtRow(row: Row): ThoughtRow {
+function parseThoughtRow(row: Row): Thought {
   return {
     id: row.id as string,
     content: row.content as string,
@@ -112,7 +112,7 @@ export class TursoThoughtRepository implements ThoughtRepository {
   async ftsSearch(
     query: string,
     options: { limit: number; includeSuperseded?: boolean },
-  ): Promise<ThoughtRow[]> {
+  ): Promise<Thought[]> {
     const result = await this.db.execute({
       sql: `SELECT t.id, t.content, t.type, t.topics, t.people, t.created_at
             FROM thought_fts f
@@ -151,7 +151,7 @@ export class TursoThoughtRepository implements ThoughtRepository {
     limit: number;
     type?: string;
     includeSuperseded?: boolean;
-  }): Promise<ThoughtRow[]> {
+  }): Promise<Thought[]> {
     const status = statusClause(undefined, options.includeSuperseded);
     const typeClause = options.type ? "AND type = :type" : "";
 

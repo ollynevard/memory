@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  Thought,
   ThoughtRepository,
-  ThoughtRow,
   VectorSearchResult,
 } from "../src/repository";
 import type { Embedder } from "../src/services/llm";
@@ -30,7 +30,7 @@ function makeVectorResult(
   };
 }
 
-function makeFtsResult(overrides: Partial<ThoughtRow> = {}): ThoughtRow {
+function makeFtsResult(overrides: Partial<Thought> = {}): Thought {
   return {
     id: "abc123",
     content: "test thought",
@@ -44,7 +44,7 @@ function makeFtsResult(overrides: Partial<ThoughtRow> = {}): ThoughtRow {
 
 function mockRepo(
   vectorResults: VectorSearchResult[] = [],
-  ftsResults: ThoughtRow[] = [],
+  ftsResults: Thought[] = [],
 ): ThoughtRepository {
   return {
     insert: vi.fn(),
