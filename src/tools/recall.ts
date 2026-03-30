@@ -121,12 +121,8 @@ export const schema = {
     .describe("Maximum results to return."),
 };
 
-export interface RecallDeps {
-  embedder: Embedder;
-}
-
 export async function handler(
-  deps: RecallDeps,
+  embedder: Embedder,
   repo: ThoughtRepository,
   { query, limit }: { query: string; limit: number },
 ): Promise<CallToolResult> {
@@ -140,7 +136,7 @@ export async function handler(
   }
 
   try {
-    const results = await recall(deps.embedder, repo, { query, limit });
+    const results = await recall(embedder, repo, { query, limit });
 
     if (results.length === 0) {
       return {
