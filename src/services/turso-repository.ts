@@ -8,10 +8,6 @@ import type {
   VectorSearchResult,
 } from "../repository";
 
-// ---------------------------------------------------------------------------
-// Helpers (moved from db.ts — internal to the Turso implementation)
-// ---------------------------------------------------------------------------
-
 function statusClause(alias?: string, includeSuperseded?: boolean): string {
   const col = alias ? `${alias}.status` : "status";
   return includeSuperseded ? `${col} != 'deleted'` : `${col} = 'active'`;
@@ -41,10 +37,6 @@ function parseThoughtRow(row: Row): ThoughtRow {
     created_at: row.created_at as string,
   };
 }
-
-// ---------------------------------------------------------------------------
-// TursoThoughtRepository
-// ---------------------------------------------------------------------------
 
 export class TursoThoughtRepository implements ThoughtRepository {
   constructor(private db: Client) {}

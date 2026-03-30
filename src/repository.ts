@@ -1,7 +1,3 @@
-// ---------------------------------------------------------------------------
-// ThoughtRepository — domain-level interface for thought persistence
-// ---------------------------------------------------------------------------
-
 export interface ThoughtRow {
   id: string;
   content: string;
