@@ -2,6 +2,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { LIMITS } from "../constants";
 import type { Thought, ThoughtRepository } from "../repository";
+import { mcpHandler } from "./handler";
 
 export interface BrowseOptions {
   limit?: number;
@@ -39,7 +40,7 @@ export async function handler(
   repo: ThoughtRepository,
   { limit, type }: { limit: number; type?: string },
 ): Promise<CallToolResult> {
-  try {
+  return mcpHandler("browse thoughts", async () => {
     const results = await browse(repo, { limit, type });
 
     if (results.length === 0) {
@@ -58,13 +59,5 @@ export async function handler(
       .join("\n\n");
 
     return { content: [{ type: "text", text }] };
-  } catch (err) {
-    console.error("browse failed:", err);
-    return {
-      content: [
-        { type: "text", text: "Failed to browse thoughts. Please try again." },
-      ],
-      isError: true,
-    };
-  }
+  });
 }
