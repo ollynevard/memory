@@ -1,25 +1,12 @@
-import type { Client } from "@libsql/client/web";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import type { ThoughtRepository } from "../repository";
 
-export async function forget(db: Client, id: string): Promise<boolean> {
-  const results = await db.batch(
-    [
-      {
-        sql: `UPDATE thoughts
-              SET status = 'deleted', deleted_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-              WHERE id = :id AND status != 'deleted'`,
-        args: { id },
-      },
-      {
-        sql: `DELETE FROM thought_fts WHERE rowid = (SELECT rowid FROM thoughts WHERE id = :id)`,
-        args: { id },
-      },
-    ],
-    "write",
-  );
-
-  return results[0].rowsAffected > 0;
+export async function forget(
+  repo: ThoughtRepository,
+  id: string,
+): Promise<boolean> {
+  return repo.softDelete(id);
 }
 
 export const schema = {
@@ -27,11 +14,11 @@ export const schema = {
 };
 
 export async function handler(
-  db: Client,
+  repo: ThoughtRepository,
   { id }: { id: string },
 ): Promise<CallToolResult> {
   try {
-    const deleted = await forget(db, id);
+    const deleted = await forget(repo, id);
 
     const text = deleted
       ? `Forgotten: ${id}`

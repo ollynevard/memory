@@ -5,6 +5,7 @@ import { handleAccessRequest } from "./auth/access-handler";
 import type { Props } from "./auth/types";
 import { createClient } from "./services/db";
 import { createOpenAIChatModel, createOpenAIEmbedder } from "./services/openai";
+import { TursoThoughtRepository } from "./services/turso-repository";
 import {
   handler as browseHandler,
   schema as browseSchema,
@@ -55,6 +56,7 @@ export class MemoryMCP extends McpAgent<Env, Record<string, never>, Props> {
     }
 
     const db = createClient(this.env.TURSO_URL, this.env.TURSO_AUTH_TOKEN);
+    const repo = new TursoThoughtRepository(db);
     const embedder = createOpenAIEmbedder(this.env.OPENAI_API_KEY);
     const chat = createOpenAIChatModel(this.env.OPENAI_API_KEY);
 
@@ -62,35 +64,35 @@ export class MemoryMCP extends McpAgent<Env, Record<string, never>, Props> {
       "remember",
       "Store a thought. The server handles embedding, metadata extraction, deduplication, and superseding automatically.",
       rememberSchema,
-      (args) => rememberHandler({ embedder, chat }, db, args),
+      (args) => rememberHandler({ embedder, chat }, repo, args),
     );
 
     this.server.tool(
       "recall",
       "Search memories by meaning and keyword. Runs hybrid semantic + full-text search and returns ranked results.",
       recallSchema,
-      (args) => recallHandler({ embedder }, db, args),
+      (args) => recallHandler({ embedder }, repo, args),
     );
 
     this.server.tool(
       "browse",
       "List recent thoughts in chronological order.",
       browseSchema,
-      (args) => browseHandler(db, args),
+      (args) => browseHandler(repo, args),
     );
 
     this.server.tool(
       "forget",
       "Soft-delete a thought by ID.",
       forgetSchema,
-      (args) => forgetHandler(db, args),
+      (args) => forgetHandler(repo, args),
     );
 
     this.server.tool(
       "stats",
       "Overview of the memory store — total count, breakdown by type, superseded count, and most recent capture timestamp.",
       {},
-      () => statsHandler(db),
+      () => statsHandler(repo),
     );
   }
 }
