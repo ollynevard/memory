@@ -1,7 +1,7 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { LIMITS } from "../constants";
-import type { ThoughtRepository, ThoughtRow } from "../repository";
+import type { Thought, ThoughtRepository } from "../repository";
 
 export interface BrowseOptions {
   limit?: number;
@@ -9,12 +9,10 @@ export interface BrowseOptions {
   includeSuperseded?: boolean;
 }
 
-export type BrowseResult = ThoughtRow;
-
 export async function browse(
   repo: ThoughtRepository,
   options: BrowseOptions,
-): Promise<BrowseResult[]> {
+): Promise<Thought[]> {
   const limit = Math.min(
     Math.max(options.limit ?? LIMITS.BROWSE_DEFAULT, 1),
     LIMITS.BROWSE_MAX,
@@ -54,7 +52,7 @@ export async function handler(
       .map((r) => {
         const parts = [`[${r.id}] (${r.type}) ${r.content}`];
         if (r.topics.length > 0) parts.push(`  topics: ${r.topics.join(", ")}`);
-        parts.push(`  created: ${r.created_at}`);
+        parts.push(`  created: ${r.createdAt}`);
         return parts.join("\n");
       })
       .join("\n\n");

@@ -1,10 +1,10 @@
 import type { Client, InStatement, Row } from "@libsql/client/web";
 import type {
   InsertThought,
-  SimilarRow,
+  SimilarThought,
   StatsResult,
+  Thought,
   ThoughtRepository,
-  ThoughtRow,
   VectorSearchResult,
 } from "../repository";
 
@@ -27,14 +27,14 @@ function safeParseArray(value: unknown): string[] {
   }
 }
 
-function parseThoughtRow(row: Row): ThoughtRow {
+function parseThought(row: Row): Thought {
   return {
     id: row.id as string,
     content: row.content as string,
     type: row.type as string,
     topics: safeParseArray(row.topics),
     people: safeParseArray(row.people),
-    created_at: row.created_at as string,
+    createdAt: row.created_at as string,
   };
 }
 
@@ -104,7 +104,7 @@ export class TursoThoughtRepository implements ThoughtRepository {
     });
 
     return result.rows.map((row) => ({
-      ...parseThoughtRow(row),
+      ...parseThought(row),
       distance: row.distance as number,
     }));
   }
@@ -112,7 +112,7 @@ export class TursoThoughtRepository implements ThoughtRepository {
   async ftsSearch(
     query: string,
     options: { limit: number; includeSuperseded?: boolean },
-  ): Promise<ThoughtRow[]> {
+  ): Promise<Thought[]> {
     const result = await this.db.execute({
       sql: `SELECT t.id, t.content, t.type, t.topics, t.people, t.created_at
             FROM thought_fts f
@@ -123,13 +123,13 @@ export class TursoThoughtRepository implements ThoughtRepository {
       args: { query, limit: options.limit },
     });
 
-    return result.rows.map(parseThoughtRow);
+    return result.rows.map(parseThought);
   }
 
   async findSimilarActive(
     embedding: number[],
     limit: number,
-  ): Promise<SimilarRow[]> {
+  ): Promise<SimilarThought[]> {
     const embeddingJson = embeddingToJson(embedding);
     const result = await this.db.execute({
       sql: `SELECT id, content, vector_distance_cos(embedding, vector(:embedding)) as distance
@@ -151,7 +151,7 @@ export class TursoThoughtRepository implements ThoughtRepository {
     limit: number;
     type?: string;
     includeSuperseded?: boolean;
-  }): Promise<ThoughtRow[]> {
+  }): Promise<Thought[]> {
     const status = statusClause(undefined, options.includeSuperseded);
     const typeClause = options.type ? "AND type = :type" : "";
 
@@ -167,7 +167,7 @@ export class TursoThoughtRepository implements ThoughtRepository {
       },
     });
 
-    return result.rows.map(parseThoughtRow);
+    return result.rows.map(parseThought);
   }
 
   async softDelete(id: string): Promise<boolean> {

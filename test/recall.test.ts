@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  Thought,
   ThoughtRepository,
-  ThoughtRow,
   VectorSearchResult,
 } from "../src/repository";
 import type { Embedder } from "../src/services/llm";
@@ -24,27 +24,27 @@ function makeVectorResult(
     type: "observation",
     topics: ["testing"],
     people: [],
-    created_at: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
     distance: 0.1,
     ...overrides,
   };
 }
 
-function makeFtsResult(overrides: Partial<ThoughtRow> = {}): ThoughtRow {
+function makeFtsResult(overrides: Partial<Thought> = {}): Thought {
   return {
     id: "abc123",
     content: "test thought",
     type: "observation",
     topics: ["testing"],
     people: [],
-    created_at: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
     ...overrides,
   };
 }
 
 function mockRepo(
   vectorResults: VectorSearchResult[] = [],
-  ftsResults: ThoughtRow[] = [],
+  ftsResults: Thought[] = [],
 ): ThoughtRepository {
   return {
     insert: vi.fn(),
@@ -164,7 +164,7 @@ describe("recall", () => {
       makeVectorResult({
         id: "old",
         type: "decision",
-        created_at: old.toISOString(),
+        createdAt: old.toISOString(),
         distance: 0.1,
       }),
     ]);
@@ -178,7 +178,7 @@ describe("recall", () => {
     const repo = mockRepo([
       makeVectorResult({
         type: "decision",
-        created_at: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
         distance: 0.1,
       }),
     ]);
