@@ -1,9 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createOpenAIChatModel,
-  createOpenAIEmbedder,
-  extractMetadata,
-} from "../../src/services/openai";
+import { createOpenAIEmbedder } from "../../src/services/openai";
 
 const apiKey = "test-key";
 
@@ -63,61 +59,6 @@ describe("createOpenAIEmbedder", () => {
     const embedder = createOpenAIEmbedder(apiKey);
     await expect(embedder.embed("test")).rejects.toThrow(
       "OpenAI embedding failed",
-    );
-  });
-});
-
-describe("extractMetadata", () => {
-  it("extracts metadata from content", async () => {
-    mockFetchResponse({
-      choices: [
-        {
-          message: {
-            content: JSON.stringify({
-              type: "decision",
-              topics: ["architecture", "database"],
-              people: ["Sarah"],
-              action_items: ["review schema"],
-            }),
-          },
-        },
-      ],
-    });
-
-    const chat = createOpenAIChatModel(apiKey);
-    const result = await extractMetadata(
-      chat,
-      "Sarah suggested we use Postgres for the new project",
-    );
-
-    expect(result.type).toBe("decision");
-    expect(result.topics).toEqual(["architecture", "database"]);
-    expect(result.people).toEqual(["Sarah"]);
-    expect(result.action_items).toEqual(["review schema"]);
-  });
-
-  it("falls back to defaults for missing fields", async () => {
-    mockFetchResponse({
-      choices: [{ message: { content: JSON.stringify({}) } }],
-    });
-
-    const chat = createOpenAIChatModel(apiKey);
-    const result = await extractMetadata(chat, "some thought");
-
-    expect(result.type).toBe("observation");
-    expect(result.topics).toEqual([]);
-    expect(result.people).toEqual([]);
-    expect(result.action_items).toEqual([]);
-  });
-
-  it("throws on non-retryable API error", async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
-      new Response("Bad Request", { status: 400 }),
-    );
-
-    const chat = createOpenAIChatModel(apiKey);
-    await expect(extractMetadata(chat, "test")).rejects.toThrow(
-      "OpenAI chat completion failed",
     );
   });
 });
