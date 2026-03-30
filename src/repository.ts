@@ -59,6 +59,7 @@ export interface ThoughtRepository {
   /** Vector search restricted to active thoughts only. Used for duplicate/supersede detection. */
   findSimilarActive(embedding: number[], limit: number): Promise<SimilarRow[]>;
 
+  /** Lists recent thoughts in reverse chronological order, with optional type filtering. */
   browse(options: {
     limit: number;
     type?: string;
@@ -68,5 +69,6 @@ export interface ThoughtRepository {
   /** Soft-deletes by setting status and cleaning up FTS. Returns false if the thought was already deleted or not found. */
   softDelete(id: string): Promise<boolean>;
 
+  /** Returns aggregate counts: total active, breakdown by type, superseded count, and most recent timestamp. */
   stats(): Promise<StatsResult>;
 }
