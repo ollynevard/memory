@@ -36,7 +36,8 @@ memory/
 │   ├── services/
 │   │   ├── db.ts              ← Turso client factory + ID generation
 │   │   ├── llm.ts             ← Embedder + ChatModel interfaces
-│   │   ├── openai.ts          ← OpenAI implementations + metadata extraction
+│   │   ├── metadata.ts         ← Metadata extraction (prompt, parsing, defaults)
+│   │   ├── openai.ts          ← OpenAI adapter (embedder + chat model factories)
 │   │   ├── turso-repository.ts ← TursoThoughtRepository (all SQL lives here)
 │   │   └── supersede.ts       ← Duplicate/supersede detection
 │   └── schema.sql

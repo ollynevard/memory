@@ -2,8 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThoughtRepository } from "../src/repository";
 import type { ChatModel, Embedder } from "../src/services/llm";
 
-// Mock extractMetadata (still in openai.ts but now takes ChatModel)
-vi.mock("../src/services/openai", () => ({
+vi.mock("../src/services/metadata", () => ({
   extractMetadata: vi.fn(),
 }));
 
@@ -22,7 +21,7 @@ vi.mock("../src/services/db", async (importOriginal) => {
 });
 
 import { generateId } from "../src/services/db";
-import { extractMetadata } from "../src/services/openai";
+import { extractMetadata } from "../src/services/metadata";
 import { checkSupersede } from "../src/services/supersede";
 import { remember } from "../src/tools/remember";
 

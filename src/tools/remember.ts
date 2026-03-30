@@ -6,7 +6,7 @@ import type { ThoughtRepository } from "../repository";
 import { generateId } from "../services/db";
 import type { ChatModel, Embedder } from "../services/llm";
 import { timed } from "../services/logger";
-import { extractMetadata } from "../services/openai";
+import { extractMetadata } from "../services/metadata";
 import { checkSupersede } from "../services/supersede";
 
 export interface RememberResult {
