@@ -32,11 +32,13 @@ memory/
 │   │   ├── browse.ts
 │   │   ├── forget.ts
 │   │   └── stats.ts
+│   ├── repository.ts          ← ThoughtRepository interface + domain types
 │   ├── services/
-│   │   ├── llm.ts
-│   │   ├── openai.ts
-│   │   ├── turso.ts
-│   │   └── supersede.ts
+│   │   ├── db.ts              ← Turso client factory + ID generation
+│   │   ├── llm.ts             ← Embedder + ChatModel interfaces
+│   │   ├── openai.ts          ← OpenAI implementations + metadata extraction
+│   │   ├── turso-repository.ts ← TursoThoughtRepository (all SQL lives here)
+│   │   └── supersede.ts       ← Duplicate/supersede detection
 │   └── schema.sql
 ├── docs/
 │   ├── vision.md
@@ -45,6 +47,13 @@ memory/
 ├── package.json
 └── tsconfig.json
 ```
+
+## Code Style
+
+- **File ordering:** Types/interfaces first, then core logic, then schema/config, then handler/entrypoint
+- **Exports:** Inline with declarations (`export function`, `export interface`), not gathered at the bottom
+- **Comments:** JSDoc (`/** */`) on all public interface methods for consistency. Don't add comments that narrate code history or section-header banners — let git and file structure do that work
+- **Stay idiomatic:** Write TypeScript, not Java-in-TypeScript. Avoid unnecessary abstractions, abstract base classes, or DI containers
 
 ## Branches
 
