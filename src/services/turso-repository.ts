@@ -49,41 +49,9 @@ function parseThoughtRow(row: Row): ThoughtRow {
 export class TursoThoughtRepository implements ThoughtRepository {
   constructor(private db: Client) {}
 
-  async insert(thought: InsertThought): Promise<void> {
+  private insertStatements(thought: InsertThought): InStatement[] {
     const embeddingJson = embeddingToJson(thought.embedding);
-
-    await this.db.batch(
-      [
-        {
-          sql: `INSERT INTO thoughts (id, content, embedding, type, topics, people, action_items)
-                VALUES (:id, :content, vector(:embedding), :type, :topics, :people, :action_items)`,
-          args: {
-            id: thought.id,
-            content: thought.content,
-            embedding: embeddingJson,
-            type: thought.type,
-            topics: JSON.stringify(thought.topics),
-            people: JSON.stringify(thought.people),
-            action_items: JSON.stringify(thought.action_items),
-          },
-        },
-        {
-          sql: `INSERT INTO thought_fts (rowid, content)
-                SELECT rowid, content FROM thoughts WHERE id = :id`,
-          args: { id: thought.id },
-        },
-      ],
-      "write",
-    );
-  }
-
-  async insertAndSupersede(
-    thought: InsertThought,
-    supersedesId: string,
-  ): Promise<void> {
-    const embeddingJson = embeddingToJson(thought.embedding);
-
-    const statements: InStatement[] = [
+    return [
       {
         sql: `INSERT INTO thoughts (id, content, embedding, type, topics, people, action_items)
               VALUES (:id, :content, vector(:embedding), :type, :topics, :people, :action_items)`,
@@ -102,6 +70,19 @@ export class TursoThoughtRepository implements ThoughtRepository {
               SELECT rowid, content FROM thoughts WHERE id = :id`,
         args: { id: thought.id },
       },
+    ];
+  }
+
+  async insert(thought: InsertThought): Promise<void> {
+    await this.db.batch(this.insertStatements(thought), "write");
+  }
+
+  async insertAndSupersede(
+    thought: InsertThought,
+    supersedesId: string,
+  ): Promise<void> {
+    const statements: InStatement[] = [
+      ...this.insertStatements(thought),
       {
         sql: `UPDATE thoughts SET status = 'superseded', superseded_by = :newId, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = :oldId`,
         args: { newId: thought.id, oldId: supersedesId },
@@ -141,8 +122,7 @@ export class TursoThoughtRepository implements ThoughtRepository {
     options: { limit: number; includeSuperseded?: boolean },
   ): Promise<ThoughtRow[]> {
     const result = await this.db.execute({
-      sql: `SELECT t.id, t.content, t.type, t.topics, t.people, t.created_at,
-              rank as fts_rank
+      sql: `SELECT t.id, t.content, t.type, t.topics, t.people, t.created_at
             FROM thought_fts f
             JOIN thoughts t ON f.rowid = t.rowid
             WHERE thought_fts MATCH :query AND ${statusClause("t", options.includeSuperseded)}
