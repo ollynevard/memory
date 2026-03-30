@@ -76,13 +76,9 @@ export const schema = {
   content: z.string().describe("The thought to remember, in natural language."),
 };
 
-export interface RememberDeps {
-  embedder: Embedder;
-  chat: ChatModel;
-}
-
 export async function handler(
-  deps: RememberDeps,
+  embedder: Embedder,
+  chat: ChatModel,
   repo: ThoughtRepository,
   { content }: { content: string },
 ): Promise<CallToolResult> {
@@ -96,7 +92,7 @@ export async function handler(
   }
 
   try {
-    const result = await remember(deps.embedder, deps.chat, repo, content);
+    const result = await remember(embedder, chat, repo, content);
 
     const parts = [`Remembered (${result.id}): ${result.type}`];
     if (result.topics.length > 0)

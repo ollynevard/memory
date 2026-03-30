@@ -64,14 +64,14 @@ export class MemoryMCP extends McpAgent<Env, Record<string, never>, Props> {
       "remember",
       "Store a thought. The server handles embedding, metadata extraction, deduplication, and superseding automatically.",
       rememberSchema,
-      (args) => rememberHandler({ embedder, chat }, repo, args),
+      (args) => rememberHandler(embedder, chat, repo, args),
     );
 
     this.server.tool(
       "recall",
       "Search memories by meaning and keyword. Runs hybrid semantic + full-text search and returns ranked results.",
       recallSchema,
-      (args) => recallHandler({ embedder }, repo, args),
+      (args) => recallHandler(embedder, repo, args),
     );
 
     this.server.tool(
