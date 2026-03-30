@@ -35,22 +35,28 @@ export interface StatsResult {
 }
 
 export interface ThoughtRepository {
+  /** Atomically inserts the thought and syncs the FTS index. */
   insert(thought: InsertThought): Promise<void>;
+
+  /** Atomically inserts a new thought, marks the superseded thought, and updates both FTS entries. */
   insertAndSupersede(
     thought: InsertThought,
     supersedesId: string,
   ): Promise<void>;
 
+  /** Cosine similarity search. Results are ordered nearest-first; distance is raw cosine distance (similarity = 1 - distance). */
   vectorSearch(
     embedding: number[],
     options: { limit: number; includeSuperseded?: boolean },
   ): Promise<VectorSearchResult[]>;
 
+  /** Full-text search via FTS5 MATCH. Results are ordered by rank. */
   ftsSearch(
     query: string,
     options: { limit: number; includeSuperseded?: boolean },
   ): Promise<ThoughtRow[]>;
 
+  /** Vector search restricted to active thoughts only. Used for duplicate/supersede detection. */
   findSimilarActive(embedding: number[], limit: number): Promise<SimilarRow[]>;
 
   browse(options: {
@@ -59,6 +65,7 @@ export interface ThoughtRepository {
     includeSuperseded?: boolean;
   }): Promise<ThoughtRow[]>;
 
+  /** Soft-deletes by setting status and cleaning up FTS. Returns false if the thought was already deleted or not found. */
   softDelete(id: string): Promise<boolean>;
 
   stats(): Promise<StatsResult>;
