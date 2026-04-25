@@ -28,6 +28,26 @@ describe("extractMetadata", () => {
     expect(result.topics).toEqual(["architecture", "database"]);
     expect(result.people).toEqual(["Sarah"]);
     expect(result.action_items).toEqual(["review schema"]);
+    expect(result.dates_mentioned).toEqual([]);
+  });
+
+  it("extracts dates mentioned in content", async () => {
+    const chat = mockChat(
+      JSON.stringify({
+        type: "task",
+        topics: ["meeting"],
+        people: ["Sarah"],
+        action_items: [],
+        dates_mentioned: ["2025-03-05"],
+      }),
+    );
+
+    const result = await extractMetadata(
+      chat,
+      "Meeting with Sarah on March 5th 2025",
+    );
+
+    expect(result.dates_mentioned).toEqual(["2025-03-05"]);
   });
 
   it("falls back to defaults for missing fields", async () => {
@@ -38,6 +58,7 @@ describe("extractMetadata", () => {
     expect(result.topics).toEqual([]);
     expect(result.people).toEqual([]);
     expect(result.action_items).toEqual([]);
+    expect(result.dates_mentioned).toEqual([]);
   });
 
   it("falls back to defaults on invalid JSON", async () => {
@@ -48,5 +69,6 @@ describe("extractMetadata", () => {
     expect(result.topics).toEqual([]);
     expect(result.people).toEqual([]);
     expect(result.action_items).toEqual([]);
+    expect(result.dates_mentioned).toEqual([]);
   });
 });

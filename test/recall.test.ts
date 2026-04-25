@@ -47,6 +47,7 @@ function mockRepo(
   ftsResults: Thought[] = [],
 ): ThoughtRepository {
   return {
+    existsByFingerprint: vi.fn(),
     insert: vi.fn(),
     insertAndSupersede: vi.fn(),
     vectorSearch: vi.fn().mockResolvedValue(vectorResults),

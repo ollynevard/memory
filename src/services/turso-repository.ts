@@ -41,12 +41,20 @@ function parseThought(row: Row): Thought {
 export class TursoThoughtRepository implements ThoughtRepository {
   constructor(private db: Client) {}
 
+  async existsByFingerprint(fingerprint: string): Promise<boolean> {
+    const result = await this.db.execute({
+      sql: `SELECT 1 FROM thoughts WHERE content_fingerprint = :fp AND status = 'active' LIMIT 1`,
+      args: { fp: fingerprint },
+    });
+    return result.rows.length > 0;
+  }
+
   private insertStatements(thought: InsertThought): InStatement[] {
     const embeddingJson = embeddingToJson(thought.embedding);
     return [
       {
-        sql: `INSERT INTO thoughts (id, content, embedding, type, topics, people, action_items)
-              VALUES (:id, :content, vector(:embedding), :type, :topics, :people, :action_items)`,
+        sql: `INSERT INTO thoughts (id, content, embedding, type, topics, people, action_items, dates_mentioned, content_fingerprint, source)
+              VALUES (:id, :content, vector(:embedding), :type, :topics, :people, :action_items, :dates_mentioned, :content_fingerprint, :source)`,
         args: {
           id: thought.id,
           content: thought.content,
@@ -55,6 +63,9 @@ export class TursoThoughtRepository implements ThoughtRepository {
           topics: JSON.stringify(thought.topics),
           people: JSON.stringify(thought.people),
           action_items: JSON.stringify(thought.action_items),
+          dates_mentioned: JSON.stringify(thought.dates_mentioned),
+          content_fingerprint: thought.content_fingerprint,
+          source: thought.source,
         },
       },
       {

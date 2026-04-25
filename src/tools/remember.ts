@@ -16,7 +16,17 @@ export interface RememberResult {
   topics: string[];
   people: string[];
   action_items: string[];
+  dates_mentioned: string[];
   superseded?: { id: string; reason: string };
+}
+
+async function fingerprint(content: string): Promise<string> {
+  const normalized = content.toLowerCase().replace(/\s+/g, " ").trim();
+  const encoded = new TextEncoder().encode(normalized);
+  const hash = await crypto.subtle.digest("SHA-256", encoded);
+  return [...new Uint8Array(hash)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 export async function remember(
@@ -24,14 +34,24 @@ export async function remember(
   chat: ChatModel,
   repo: ThoughtRepository,
   content: string,
+  source = "claude",
 ): Promise<RememberResult> {
-  // 1. Fan out parallel LLM calls: embedding + metadata extraction
+  // 1. Cheap exact-match dedup via content fingerprint
+  const fp = await fingerprint(content);
+  const exists = await timed("fingerprint_check", () =>
+    repo.existsByFingerprint(fp),
+  );
+  if (exists) {
+    throw new DuplicateThoughtError();
+  }
+
+  // 2. Fan out parallel LLM calls: embedding + metadata extraction
   const [embedding, metadata] = await Promise.all([
     timed("embed", () => embedder.embed(content)),
     timed("extract_metadata", () => extractMetadata(chat, content)),
   ]);
 
-  // 2. Dedup + supersede check (read-only)
+  // 3. Dedup + supersede check (read-only)
   const supersedeResult = await timed("check_supersede", () =>
     checkSupersede(chat, repo, content, embedding),
   );
@@ -40,7 +60,7 @@ export async function remember(
     throw new DuplicateThoughtError();
   }
 
-  // 3. Build thought and persist
+  // 4. Build thought and persist
   const id = generateId();
   const thought = {
     id,
@@ -50,6 +70,9 @@ export async function remember(
     topics: metadata.topics,
     people: metadata.people,
     action_items: metadata.action_items,
+    dates_mentioned: metadata.dates_mentioned,
+    content_fingerprint: fp,
+    source,
   };
 
   if (supersedeResult.supersedes) {
@@ -75,13 +98,19 @@ export async function remember(
 
 export const schema = {
   content: z.string().describe("The thought to remember, in natural language."),
+  source: z
+    .string()
+    .optional()
+    .describe(
+      "Where this thought originated (e.g. 'claude', 'chatgpt', 'notion'). Defaults to 'claude'.",
+    ),
 };
 
 export async function handler(
   embedder: Embedder,
   chat: ChatModel,
   repo: ThoughtRepository,
-  { content }: { content: string },
+  { content, source }: { content: string; source?: string },
 ): Promise<CallToolResult> {
   if (content.length > LIMITS.REMEMBER_CONTENT) {
     return {
@@ -95,7 +124,7 @@ export async function handler(
   return mcpHandler("store thought", async () => {
     let result: RememberResult;
     try {
-      result = await remember(embedder, chat, repo, content);
+      result = await remember(embedder, chat, repo, content, source);
     } catch (err) {
       if (err instanceof DuplicateThoughtError) {
         return {
@@ -113,6 +142,8 @@ export async function handler(
       parts.push(`People: ${result.people.join(", ")}`);
     if (result.action_items.length > 0)
       parts.push(`Action items: ${result.action_items.join("; ")}`);
+    if (result.dates_mentioned.length > 0)
+      parts.push(`Dates: ${result.dates_mentioned.join(", ")}`);
     if (result.superseded)
       parts.push(
         `Superseded ${result.superseded.id}: ${result.superseded.reason}`,
