@@ -45,6 +45,7 @@ function mockRepo(
   overrides: Partial<ThoughtRepository> = {},
 ): ThoughtRepository {
   return {
+    existsByFingerprint: vi.fn().mockResolvedValue(false),
     insert: vi.fn().mockResolvedValue(undefined),
     insertAndSupersede: vi.fn().mockResolvedValue(undefined),
     vectorSearch: vi.fn().mockResolvedValue([]),
@@ -72,6 +73,7 @@ describe("remember", () => {
       topics: ["testing"],
       people: [],
       action_items: [],
+      dates_mentioned: [],
     });
     mockCheckSupersede.mockResolvedValue({ isDuplicate: false });
     mockGenerateId.mockReturnValue("generated-id-abc");
@@ -93,6 +95,7 @@ describe("remember", () => {
       topics: ["testing"],
       people: [],
       action_items: [],
+      dates_mentioned: [],
       superseded: undefined,
     });
   });
@@ -176,5 +179,45 @@ describe("remember", () => {
 
     expect(repo.insert).toHaveBeenCalledOnce();
     expect(repo.insertAndSupersede).not.toHaveBeenCalled();
+  });
+
+  it("rejects exact duplicates via fingerprint before calling LLM", async () => {
+    const repo = mockRepo({
+      existsByFingerprint: vi.fn().mockResolvedValue(true),
+    });
+
+    await expect(
+      remember(mockEmbedder, mockChat, repo, "duplicate thought"),
+    ).rejects.toThrow("too similar to an existing memory");
+
+    expect(mockEmbedder.embed).not.toHaveBeenCalled();
+    expect(mockExtractMetadata).not.toHaveBeenCalled();
+  });
+
+  it("passes source param through to repo.insert", async () => {
+    const repo = mockRepo();
+
+    await remember(mockEmbedder, mockChat, repo, "from chatgpt", "chatgpt");
+
+    const thought = vi.mocked(repo.insert).mock.calls[0][0];
+    expect(thought.source).toBe("chatgpt");
+  });
+
+  it("defaults source to claude when not provided", async () => {
+    const repo = mockRepo();
+
+    await remember(mockEmbedder, mockChat, repo, "no source specified");
+
+    const thought = vi.mocked(repo.insert).mock.calls[0][0];
+    expect(thought.source).toBe("claude");
+  });
+
+  it("stores content_fingerprint in the thought", async () => {
+    const repo = mockRepo();
+
+    await remember(mockEmbedder, mockChat, repo, "some content");
+
+    const thought = vi.mocked(repo.insert).mock.calls[0][0];
+    expect(thought.content_fingerprint).toMatch(/^[a-f0-9]{64}$/);
   });
 });

@@ -5,6 +5,7 @@ export interface ThoughtMetadata {
   topics: string[];
   people: string[];
   action_items: string[];
+  dates_mentioned: string[];
 }
 
 const METADATA_PROMPT = `Extract metadata from the following thought. Return JSON only, no markdown:
@@ -12,6 +13,7 @@ const METADATA_PROMPT = `Extract metadata from the following thought. Return JSO
 - "topics": array of 1-4 short topic tags
 - "people": array of people mentioned (empty if none)
 - "action_items": array of implied to-dos (empty if none)
+- "dates_mentioned": array of dates referenced in the content in YYYY-MM-DD format (empty if none)
 Only extract what's explicitly present.`;
 
 export async function extractMetadata(
@@ -31,7 +33,13 @@ export async function extractMetadata(
     parsed = JSON.parse(raw) as Record<string, unknown>;
   } catch {
     console.error("Failed to parse metadata response:", raw);
-    return { type: "observation", topics: [], people: [], action_items: [] };
+    return {
+      type: "observation",
+      topics: [],
+      people: [],
+      action_items: [],
+      dates_mentioned: [],
+    };
   }
 
   return {
@@ -39,5 +47,8 @@ export async function extractMetadata(
     topics: Array.isArray(parsed.topics) ? parsed.topics : [],
     people: Array.isArray(parsed.people) ? parsed.people : [],
     action_items: Array.isArray(parsed.action_items) ? parsed.action_items : [],
+    dates_mentioned: Array.isArray(parsed.dates_mentioned)
+      ? parsed.dates_mentioned
+      : [],
   };
 }

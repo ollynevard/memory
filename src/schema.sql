@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS thoughts (
   people TEXT DEFAULT '[]',
   related TEXT DEFAULT '[]',
   action_items TEXT DEFAULT '[]',
+  dates_mentioned TEXT DEFAULT '[]',
+  content_fingerprint TEXT UNIQUE,
   source TEXT DEFAULT 'claude',
   status TEXT DEFAULT 'active',     -- active | superseded | deleted
   superseded_by TEXT REFERENCES thoughts(id),
@@ -24,6 +26,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS thought_fts USING fts5(
   content_rowid=rowid
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_thoughts_fingerprint ON thoughts(content_fingerprint);
 CREATE INDEX IF NOT EXISTS idx_thoughts_type ON thoughts(type);
 CREATE INDEX IF NOT EXISTS idx_thoughts_status ON thoughts(status);
 CREATE INDEX IF NOT EXISTS idx_thoughts_created ON thoughts(created_at DESC);

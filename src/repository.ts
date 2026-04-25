@@ -25,6 +25,9 @@ export interface InsertThought {
   topics: string[];
   people: string[];
   action_items: string[];
+  dates_mentioned: string[];
+  content_fingerprint: string;
+  source: string;
 }
 
 export interface StatsResult {
@@ -35,6 +38,9 @@ export interface StatsResult {
 }
 
 export interface ThoughtRepository {
+  /** Returns true if an active thought with this fingerprint already exists. */
+  existsByFingerprint(fingerprint: string): Promise<boolean>;
+
   /** Atomically inserts the thought and syncs the FTS index. */
   insert(thought: InsertThought): Promise<void>;
 

@@ -8,6 +8,7 @@ function mockRepo(
   overrides: Partial<ThoughtRepository> = {},
 ): ThoughtRepository {
   return {
+    existsByFingerprint: vi.fn(),
     insert: vi.fn(),
     insertAndSupersede: vi.fn(),
     vectorSearch: vi.fn(),
